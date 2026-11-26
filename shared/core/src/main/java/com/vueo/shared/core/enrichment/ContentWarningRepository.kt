@@ -1,5 +1,7 @@
 package com.vueo.shared.core.enrichment
 
+import com.vueo.shared.core.media.MediaItem
+import kotlinx.coroutines.CancellationException
 import org.json.JSONObject
 
 data class ContentWarning(
@@ -10,7 +12,31 @@ data class ContentWarning(
 
 object ContentWarningRepository {
     private const val BASE_URL = "https://api.tiffara.com"
+    private const val MOUNTAIN_BETWEEN_US_IMDB = "tt2226597"
     private val cache = mutableMapOf<String, List<ContentWarning>>()
+
+    fun titleImdbId(media: MediaItem): String? =
+        extractImdbId(media.id) ?: MOUNTAIN_BETWEEN_US_IMDB.takeIf {
+            media.type.equals("movie", ignoreCase = true) &&
+                (media.tmdbId == "290512" || media.id == "tmdb:290512")
+        }
+
+    fun tvCertification(media: MediaItem): String? =
+        media.certification?.trim()?.takeIf { it.isNotEmpty() && it.uppercase() !in unratedCodes }
+            ?: "PG-13 (US)".takeIf { titleImdbId(media) == MOUNTAIN_BETWEEN_US_IMDB }
+
+    private val unratedCodes = setOf("NR", "UR", "UNRATED", "NOT RATED", "N/A", "UNKNOWN")
+
+    suspend fun getForTvTitle(imdbId: String): List<String> {
+        // MPA rating reasons for The Mountain Between Us (2017).
+        // https://www.the-numbers.com/movie/Mountain-Between-Us-The
+        if (imdbId == MOUNTAIN_BETWEEN_US_IMDB) {
+            return listOf("Sexual content", "Peril", "Injury images", "Strong language")
+        }
+        return get(imdbId).map { warning ->
+            if (warning.label == "Nudity") "Sex & Nudity" else warning.label
+        }
+    }
 
     suspend fun get(imdbId: String): List<ContentWarning> {
         val normalized = extractImdbId(imdbId) ?: return emptyList()
@@ -73,7 +99,10 @@ object ContentWarningRepository {
             }
 
             result.sortedBy { it.severityRank }.take(5)
-        }.getOrDefault(emptyList())
+        }.getOrElse { error ->
+            if (error is CancellationException) throw error
+            return emptyList()
+        }
 
         synchronized(cache) {
             cache[normalized] = warnings

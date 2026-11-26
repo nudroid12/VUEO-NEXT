@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -49,6 +50,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -64,7 +66,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.vueo.shared.core.enrichment.ContentWarning
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.StreamSource
@@ -97,7 +98,8 @@ internal fun VueoPlayerPresentation(
     nextEpisode: EpisodeItem?,
     activeSkip: PlayerSkipSegment?,
     nextCountdown: Int,
-    contentWarnings: List<ContentWarning>,
+    contentWarnings: List<String>,
+    warningCertification: String?,
     warningVisible: Boolean,
     onWarningComplete: () -> Unit,
     playbackError: String?,
@@ -218,13 +220,14 @@ internal fun VueoPlayerPresentation(
             onOpenPanel = onOpenPanel,
         )
 
-        if (warningVisible && contentWarnings.isNotEmpty()) {
+        if (warningVisible && (warningCertification != null || contentWarnings.isNotEmpty())) {
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(start = 32.dp, top = 32.dp),
             ) {
                 VueoContentWarningsOverlay(
+                    certification = warningCertification,
                     warnings = contentWarnings,
                     onAnimationComplete = onWarningComplete,
                 )
@@ -364,87 +367,48 @@ internal fun VueoPlayerPresentation(
 
 @Composable
 private fun VueoContentWarningsOverlay(
-    warnings: List<ContentWarning>,
+    certification: String?,
+    warnings: List<String>,
     onAnimationComplete: () -> Unit,
 ) {
-    val count = warnings.size
-    if (count == 0) return
-
-    val totalLineHeight = (count * 16) + ((count - 1) * 3)
-    val containerAlpha = remember { Animatable(0f) }
-    val lineHeightFraction = remember { Animatable(0f) }
-    val itemAlphas = remember(count) { List(count) { Animatable(0f) } }
-
-    LaunchedEffect(warnings) {
-        containerAlpha.snapTo(0f)
-        lineHeightFraction.snapTo(0f)
-        itemAlphas.forEach { it.snapTo(0f) }
-
-        containerAlpha.animateTo(1f, tween(300, easing = TvMotion.EaseOut))
-        lineHeightFraction.animateTo(
-            1f,
-            tween(400, easing = TvMotion.EaseOut),
-        )
-
-        itemAlphas.forEach { alpha ->
-            delay(80L)
-            alpha.animateTo(1f, tween(200, easing = TvMotion.EaseOut))
-        }
-
+    val opacity = remember { Animatable(0f) }
+    val onComplete by rememberUpdatedState(onAnimationComplete)
+    LaunchedEffect(Unit) {
+        opacity.animateTo(1f, tween(250, easing = TvMotion.EaseOut))
         delay(5_000L)
-
-        itemAlphas.asReversed().forEach { alpha ->
-            delay(60L)
-            alpha.animateTo(0f, tween(150, easing = TvMotion.EaseInOut))
-        }
-
-        delay(100L)
-        lineHeightFraction.animateTo(
-            0f,
-            tween(300, easing = TvMotion.EaseInOut),
-        )
-        delay(200L)
-        containerAlpha.animateTo(0f, tween(200, easing = TvMotion.EaseInOut))
-        onAnimationComplete()
+        opacity.animateTo(0f, tween(250, easing = TvMotion.EaseInOut))
+        onComplete()
     }
 
-    if (containerAlpha.value <= 0f) return
-
     Row(
-        modifier = Modifier.alpha(containerAlpha.value),
-        verticalAlignment = Alignment.Top,
+        modifier = Modifier
+            .alpha(opacity.value)
+            .background(Color.Black.copy(alpha = .72f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .width(3.dp)
-                .height((totalLineHeight * lineHeightFraction.value).dp)
-                .clip(RoundedCornerShape(50))
-                .background(TvDesign.Accent),
-        )
-        Column(
-            modifier = Modifier.padding(start = 9.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
-            warnings.forEachIndexed { index, warning ->
-                Row(
-                    modifier = Modifier.alpha(itemAlphas.getOrNull(index)?.value ?: 0f),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = warning.label,
-                        color = Color.White.copy(alpha = .92f),
-                        fontSize = 12.sp,
-                        lineHeight = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = " • ${warning.severity}",
-                        color = Color.White.copy(alpha = .56f),
-                        fontSize = 11.sp,
-                        lineHeight = 15.sp,
-                    )
-                }
-            }
+        if (certification != null) {
+            val badgeShape = RoundedCornerShape(4.dp)
+            Text(
+                text = certification,
+                color = Color.White,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.border(1.dp, Color.White.copy(alpha = .65f), badgeShape)
+                    .padding(horizontal = 6.dp, vertical = 3.dp),
+            )
+        }
+        if (warnings.isNotEmpty()) {
+            Text(
+                text = warnings.joinToString(" · "),
+                color = Color.White.copy(alpha = .92f),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 430.dp),
+            )
         }
     }
 }

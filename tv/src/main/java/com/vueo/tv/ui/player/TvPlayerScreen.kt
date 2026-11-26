@@ -89,7 +89,6 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
-import com.vueo.shared.core.enrichment.ContentWarning
 import com.vueo.shared.core.enrichment.ContentWarningRepository
 import com.vueo.shared.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.media.EpisodeItem
@@ -455,9 +454,10 @@ fun TvPlayerScreen(
     var nextCountdown by remember { mutableIntStateOf(0) }
     var resolvedImdbId by remember(mediaKey) { mutableStateOf<String?>(null) }
     var skipSegments by remember(mediaKey) { mutableStateOf<List<PlayerSkipSegment>>(emptyList()) }
-    var contentWarnings by remember(mediaKey) { mutableStateOf<List<ContentWarning>>(emptyList()) }
-    var warningVisible by remember(playerSessionId) { mutableStateOf(false) }
-    var warningShown by remember(playerSessionId) { mutableStateOf(false) }
+    val warningCertification = ContentWarningRepository.tvCertification(media)
+    var contentWarnings by remember(mediaKey) { mutableStateOf<List<String>>(emptyList()) }
+    var warningVisible by remember(mediaKey, playerSessionId) { mutableStateOf(false) }
+    var warningShown by remember(mediaKey, playerSessionId) { mutableStateOf(false) }
     var textTracks by remember(bundle.videoId) { mutableStateOf<List<TvPlayerTrackChoice>>(emptyList()) }
     var audioTracks by remember(bundle.videoId) { mutableStateOf<List<TvPlayerTrackChoice>>(emptyList()) }
     var subtitlesDisabled by remember(mediaKey) {
@@ -1319,7 +1319,7 @@ fun TvPlayerScreen(
 
     LaunchedEffect(media.id, bundle.videoId, episode?.id, runtime.pluginStore.tmdbApiKey()) {
         resolvedImdbId =
-            ContentWarningRepository.extractImdbId(media.id)
+            ContentWarningRepository.titleImdbId(media)
                 ?: ContentWarningRepository.extractImdbId(bundle.videoId)
                 ?: ContentWarningRepository.extractImdbId(episode?.id)
                 ?: runCatching {
@@ -1347,22 +1347,19 @@ fun TvPlayerScreen(
         }
     }
 
-    LaunchedEffect(resolvedImdbId, contentWarningsEnabled, playerSessionId) {
-        contentWarnings = emptyList()
-        warningVisible = false
-        warningShown = false
-
+    LaunchedEffect(mediaKey, resolvedImdbId, contentWarningsEnabled) {
         val imdbId = resolvedImdbId
-        if (contentWarningsEnabled && imdbId != null) {
-            contentWarnings = runCatching {
-                ContentWarningRepository.get(imdbId)
-            }.getOrDefault(emptyList())
+        contentWarnings = if (contentWarningsEnabled && imdbId != null) {
+            ContentWarningRepository.getForTvTitle(imdbId)
+        } else {
+            emptyList()
         }
     }
 
     LaunchedEffect(
         hasRenderedFirstFrame,
         contentWarnings,
+        warningCertification,
         contentWarningsEnabled,
         playerSessionId,
     ) {
@@ -1371,7 +1368,8 @@ fun TvPlayerScreen(
             return@LaunchedEffect
         }
 
-        if (hasRenderedFirstFrame && contentWarnings.isNotEmpty() && !warningShown) {
+        val hasAdvisory = warningCertification != null || contentWarnings.isNotEmpty()
+        if (hasRenderedFirstFrame && hasAdvisory && !warningShown) {
             warningShown = true
             warningVisible = true
         }
@@ -2164,6 +2162,7 @@ fun TvPlayerScreen(
             activeSkip = activeSkip.takeUnless { pauseBackdropVisible },
             nextCountdown = nextCountdown,
             contentWarnings = contentWarnings,
+            warningCertification = warningCertification,
             warningVisible = warningVisible,
             onWarningComplete = { warningVisible = false },
             playbackError = playbackError,

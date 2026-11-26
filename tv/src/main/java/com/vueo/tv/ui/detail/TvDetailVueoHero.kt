@@ -47,6 +47,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +70,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.enrichment.MediaRating
 import com.vueo.shared.core.detail.DetailPeoplePolicy
+import com.vueo.shared.core.enrichment.ContentWarningRepository
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.tv.R
 import com.vueo.tv.ui.TvDesign
@@ -228,7 +230,7 @@ internal fun VueoDetailHero(
             Spacer(Modifier.height(9.dp))
         }
 
-        val certification = item.certification?.trim()?.takeIf(String::isNotBlank)
+        val certification = ContentWarningRepository.tvCertification(item)
         val status = state.vueoExtras.status?.trim()?.takeIf(String::isNotBlank)
         if (certification != null || status != null || secondaryMeta.isNotEmpty()) {
             Row(
@@ -254,6 +256,22 @@ internal fun VueoDetailHero(
                     if (index < secondaryMeta.lastIndex) VueoMetaDot()
                 }
             }
+        }
+        val imdbId = ContentWarningRepository.titleImdbId(item)
+        val contentWarnings by produceState(emptyList<String>(), imdbId) {
+            value = imdbId?.let { ContentWarningRepository.getForTvTitle(it) }.orEmpty()
+        }
+        if (contentWarnings.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = contentWarnings.joinToString(" · "),
+                color = TvDesign.White.copy(alpha = .82f),
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(VueoHeroContentWidth),
+            )
         }
     }
 }
