@@ -36,7 +36,6 @@ internal fun TvThemedDialog(
     initialFocus: FocusRequester,
     onDismissRequest: () -> Unit,
     dismissOnBackPress: Boolean = true,
-    maxWidth: androidx.compose.ui.unit.Dp = 460.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     TvModalDialog(
@@ -52,7 +51,7 @@ internal fun TvThemedDialog(
             contentAlignment = Alignment.Center,
         ) {
             Column(
-                modifier = Modifier.widthIn(max = maxWidth).fillMaxWidth()
+                modifier = Modifier.widthIn(max = 460.dp).fillMaxWidth()
                     .background(TvDesign.Surface, shape)
                     .border(1.dp, TvDesign.White.copy(alpha = .22f), shape)
                     .padding(24.dp),
@@ -69,15 +68,15 @@ internal fun TvThemedDialog(
 internal fun tvDialogInputColors() = OutlinedTextFieldDefaults.colors(
     focusedTextColor = TvDesign.White,
     unfocusedTextColor = TvDesign.White,
-    focusedBorderColor = TvDesign.Accent,
+    focusedBorderColor = TvDesign.White,
     unfocusedBorderColor = TvDesign.White.copy(alpha = .28f),
     focusedContainerColor = TvDesign.SurfaceRaised,
     unfocusedContainerColor = TvDesign.SurfaceRaised,
     disabledContainerColor = TvDesign.SurfaceRaised,
     errorContainerColor = TvDesign.SurfaceRaised,
-    focusedLabelColor = TvDesign.Accent,
+    focusedLabelColor = TvDesign.White,
     unfocusedLabelColor = TvDesign.Muted,
-    cursorColor = TvDesign.Accent,
+    cursorColor = TvDesign.White,
 )
 
 @Composable
@@ -94,11 +93,11 @@ internal fun TvDialogButton(
         onClick = onClick,
         enabled = enabled,
         modifier = modifier.onFocusChanged { focused = it.isFocused }
-            .background(if (focused) TvDesign.Accent else TvDesign.Surface, shape)
-            .border(1.dp, if (focused) TvDesign.Accent else TvDesign.Stroke, shape),
+            .background(if (focused) TvDesign.White else TvDesign.Surface, shape)
+            .border(1.dp, TvDesign.White.copy(alpha = if (focused) 1f else .25f), shape),
         colors = ButtonDefaults.textButtonColors(
             contentColor = when {
-                focused -> TvDesign.OnAccent
+                focused -> TvDesign.Black
                 destructive -> MaterialTheme.colorScheme.error
                 else -> TvDesign.White
             },
