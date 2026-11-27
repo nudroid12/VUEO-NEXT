@@ -21,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -63,6 +64,8 @@ class TvHomeRetainedState internal constructor(runtime: TvRuntime) {
     // Lives above the route composition: Sources may dispose the Home UI.
     internal var routeFocusAnchor by mutableStateOf<HomeRouteFocusAnchor?>(null)
     internal var catalogOnlyProfileId by mutableStateOf<String?>(null)
+
+    internal var catalogPagination by mutableStateOf(TvHomeCatalogPagination())
 
     internal var loadedRefreshToken = Int.MIN_VALUE
     internal var libraryHydrationRefreshToken = Int.MIN_VALUE
@@ -366,14 +369,27 @@ fun TvHomeScreen(
             }).takeIf { it.entries.isNotEmpty() }
         }
     }
-    val pagedCatalogs = remember(rows, runtime.engine) { homePagedCatalogs(runtime) }
-    val railRows = remember(rows, pagedCatalogs) {
-        rows.map { row ->
-            val visibleCardCount = if (row.kind == TvHomeRowKind.CONTINUE_WATCHING) 4 else 6
-            if (row.entries.size > visibleCardCount || row.key in pagedCatalogs) {
-                row.copy(entries = row.entries + TvHomeEntry.SeeAll(row.key, row.title))
-            } else row
+    val paginationScope = rememberCoroutineScope()
+    val pagedCatalogs = homePagedCatalogs(runtime)
+    val pagination = retainedState.catalogPagination.takeIf {
+        it.matches(activeProfileId, refreshToken, kidsLimit)
+    }
+    LaunchedEffect(activeProfileId, refreshToken, kidsLimit) {
+        if (pagination == null) {
+            retainedState.catalogPagination = TvHomeCatalogPagination(
+                activeProfileId, refreshToken, kidsLimit,
+            )
         }
+    }
+    val railRows = if (pagination == null) rows else rows.map { row ->
+        val source = pagedCatalogs[row.key]
+        if (source == null) row else pagination.appendTo(row, source)
+    }
+    fun requestNextCatalogPage(row: TvHomeRow, index: Int): Boolean {
+        val source = pagedCatalogs[row.key] ?: return false
+        val nearEnd = index > 0 && row.entries.lastIndex - index < 5
+        if (!active || actionEntry != null || (!nearEnd && index != row.entries.lastIndex)) return false
+        return pagination?.request(paginationScope, runtime, row, source) == true
     }
     val hasHomeRows = railRows.any { it.entries.isNotEmpty() }
     val catalogOnly = retainedState.catalogOnlyProfileId == activeProfileId && hasHomeRows
@@ -382,8 +398,6 @@ fun TvHomeScreen(
             retainedState.catalogOnlyProfileId = if (catalogOnly) null else activeProfileId
         }
     }
-    var seeAllKey by remember(activeProfileId) { mutableStateOf<String?>(null) }
-    val seeAllRow = rows.firstOrNull { it.key == seeAllKey }
     val visibleContinueWatchingCount =
         rows.firstOrNull { it.key == "continue-watching" }?.entries?.size ?: 0
 
@@ -452,7 +466,7 @@ fun TvHomeScreen(
         // An eager request here can target a hidden/unfocusable Topbar/rail.
     }
 
-    BackHandler(enabled = active && seeAllRow == null) {
+    BackHandler(enabled = active) {
         if (catalogOnly) toggleCatalogOnly()
         else if (navExpanded) onBack() else focusSidebar()
     }
@@ -460,6 +474,7 @@ fun TvHomeScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         TvHomePresentation(
             rows = railRows,
+            onCatalogPageNeeded = ::requestNextCatalogPage,
             catalogOnly = catalogOnly,
             canToggleCatalogOnly = hasHomeRows,
             onToggleCatalogOnly = ::toggleCatalogOnly,
@@ -469,6 +484,7 @@ fun TvHomeScreen(
             onRetry = {
                 retainedState.error = null
                 retainedState.loading = retainedState.catalogRows.isEmpty()
+                retainedState.catalogPagination = TvHomeCatalogPagination(activeProfileId, refreshToken, kidsLimit)
                 retryAttempt += 1
             },
             active = active,
@@ -482,7 +498,7 @@ fun TvHomeScreen(
                     "continue-watching" -> returnSnapshotReady
                     else -> !loading
                 }
-                anchor.copy(restoreReady = actionEntry == null && seeAllRow == null &&
+                anchor.copy(restoreReady = actionEntry == null &&
                     (savedCardPresent || missingCardResolved))
             },
             onCaptureRouteFocusAnchor = {
@@ -501,10 +517,7 @@ fun TvHomeScreen(
             },
             onOpenNavigation = ::focusSidebar,
             // Rows captures the retained anchor before this changes routes.
-            onOpen = { entry ->
-                if (entry is TvHomeEntry.SeeAll) seeAllKey = entry.rowKey
-                else entry.open(onOpenMedia, onResume, onOpenCollection)
-            },
+            onOpen = { entry -> entry.open(onOpenMedia, onResume, onOpenCollection) },
             onLongClick = { entry -> if (entry !is TvHomeEntry.Folder) actionEntry = entry },
             modifier = Modifier.fillMaxSize(),
         )
@@ -535,13 +548,6 @@ fun TvHomeScreen(
             },
             modifier = Modifier.align(Alignment.CenterStart),
         )
-    }
-
-    if (active && seeAllRow != null) {
-        TvHomeSeeAll(runtime, seeAllRow, pagedCatalogs[seeAllRow.key], onDismiss = { seeAllKey = null }) { entry ->
-            seeAllKey = null
-            entry.open(onOpenMedia, onResume, onOpenCollection)
-        }
     }
 
     actionEntry?.let { entry ->

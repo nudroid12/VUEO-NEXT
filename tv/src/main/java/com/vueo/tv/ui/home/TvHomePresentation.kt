@@ -44,6 +44,7 @@ import com.vueo.tv.core.TvTitleArtwork
 @Composable
 internal fun TvHomePresentation(
     rows: List<TvHomeRow>,
+    onCatalogPageNeeded: (TvHomeRow, Int) -> Boolean,
     catalogOnly: Boolean,
     canToggleCatalogOnly: Boolean,
     onToggleCatalogOnly: () -> Unit,
@@ -132,7 +133,7 @@ internal fun TvHomePresentation(
         focusedEntry = initialRow?.let { row ->
             val index = (TvHomeFocusMemory.focusedIndexByRow[row.key] ?: 0)
                 .coerceIn(0, row.entries.lastIndex)
-            row.entries[index].takeUnless { it is TvHomeEntry.SeeAll } ?: row.entries.first()
+            row.entries[index]
         }
     }
 
@@ -188,7 +189,7 @@ internal fun TvHomePresentation(
         val index = row.entries.indexOfFirst { it.key == selected.key }
         val adjacent = row.entries.getOrNull(index + 1) ?: row.entries.getOrNull(index - 1)
             ?: return@LaunchedEffect
-        if (adjacent is TvHomeEntry.Folder || adjacent is TvHomeEntry.SeeAll) return@LaunchedEffect
+        if (adjacent is TvHomeEntry.Folder) return@LaunchedEffect
         delay(750L)
         if (verticalMotionActive || rapidHorizontalNavigation) return@LaunchedEffect
         try {
@@ -322,14 +323,12 @@ internal fun TvHomePresentation(
                             firstLeftPress = now
                         }
                     }) else ({}),
+                    onCatalogPageNeeded = onCatalogPageNeeded,
                     onFocused = { row, index, entry ->
+                        onCatalogPageNeeded(row, index)
                         if (focusedEntry?.key != entry.key || lastFocusedRowKey != row.key) firstLeftPress = 0L
                         TvHomeFocusMemory.activeRowKey = row.key
                         TvHomeFocusMemory.focusedIndexByRow[row.key] = index
-                        if (entry is TvHomeEntry.SeeAll) {
-                            lastFocusedRowKey = row.key
-                            return@TvModernHomeRows
-                        }
                         val sameRow = lastFocusedRowKey == row.key
                         if (!sameRow || focusedEntry?.key != entry.key) {
                             val now = SystemClock.uptimeMillis()

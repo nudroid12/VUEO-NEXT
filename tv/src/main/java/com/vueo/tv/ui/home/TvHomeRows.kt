@@ -159,6 +159,7 @@ internal fun TvModernHomeRows(
     onVerticalMotionChanged: (Boolean) -> Unit,
     onUpFromFirstRow: () -> Unit,
     onLeftAtRowStart: (() -> Unit)?,
+    onCatalogPageNeeded: (TvHomeRow, Int) -> Boolean,
     onFocused: (TvHomeRow, Int, TvHomeEntry) -> Unit,
     onOpen: (TvHomeEntry) -> Unit,
     onPosterLongClick: (TvHomeEntry) -> Unit,
@@ -631,6 +632,7 @@ internal fun TvModernHomeRows(
                     },
                     onContentFocused = onContentFocused,
                     onLeftAtRowStart = onLeftAtRowStart,
+                    onCatalogPageNeeded = onCatalogPageNeeded,
                     onFocused = { focusedRow, index, entry ->
                         onFocused(focusedRow, index, entry)
                     },
@@ -683,6 +685,7 @@ private fun TvModernHomeRow(
     onFocusTargetConsumed: (Int, Boolean) -> Unit,
     onContentFocused: () -> Unit,
     onLeftAtRowStart: (() -> Unit)?,
+    onCatalogPageNeeded: (TvHomeRow, Int) -> Boolean,
     onFocused: (TvHomeRow, Int, TvHomeEntry) -> Unit,
     onOpen: (TvHomeEntry) -> Unit,
     onPosterLongClick: (TvHomeEntry) -> Unit,
@@ -777,7 +780,6 @@ private fun TvModernHomeRow(
             delay(150L)
             for (index in (lastVisible + 1)..(lastVisible + 2)) {
                 val entry = row.entries.getOrNull(index) ?: continue
-                if (entry is TvHomeEntry.SeeAll) continue
                 val media = entry.media
                 val landscape = !portrait && row.kind == TvHomeRowKind.CONTINUE_WATCHING
                 val url = if (landscape) media.background ?: media.poster else media.poster ?: media.background
@@ -949,6 +951,11 @@ private fun TvModernHomeRow(
                                 (event.key == Key.DirectionLeft || event.key == Key.DirectionRight)) {
                                 preserveVerticalEntryViewport = false
                             }
+                            if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionRight &&
+                                focusedIndex == row.entries.lastIndex
+                            ) {
+                                return@onPreviewKeyEvent onCatalogPageNeeded(row, focusedIndex)
+                            }
                             false
                         }
                         .focusRequester(rowFocusRequester)
@@ -979,7 +986,7 @@ private fun TvModernHomeRow(
                                 itemFocusRequesters[index] = requester
                             }
                         } else itemFocusRequesters.getOrPut(index) { FocusRequester() }
-                        val openPosterActions = { if (entry !is TvHomeEntry.SeeAll) onPosterLongClick(entry) }
+                        val openPosterActions = { onPosterLongClick(entry) }
                         val cardVisible by remember(rowState, index) {
                             derivedStateOf {
                                 rowState.layoutInfo.visibleItemsInfo.any {
@@ -1101,10 +1108,7 @@ private fun TvModernHomeCard(
             )
             .clickable(onClick = onOpen),
     ) {
-        if (entry is TvHomeEntry.SeeAll) {
-            Text("See All", color = TvDesign.White, fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.Center))
-        } else when (kind) {
+        when (kind) {
             TvHomeRowKind.CONTINUE_WATCHING -> ContinueWatchingCardContent(entry, loadImage || focused, focused, portrait = portraitCards)
             TvHomeRowKind.COLLECTIONS -> {
                 TvNetworkImage(url = entry.media.poster, contentDescription = entry.media.name,
