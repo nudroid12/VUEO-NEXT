@@ -316,6 +316,12 @@ internal fun TvModernHomeRows(
         if (distance != 0) verticalState.animateScrollBy(distance.toFloat())
     }
 
+    fun cardForVerticalEntry(row: TvHomeRow): Int =
+        (TvHomeFocusMemory.focusedIndexByRow[row.key]
+            ?: rowListStates[row.key]?.firstVisibleItemIndex
+            ?: TvHomeFocusMemory.horizontalPositionByRow[row.key]?.firstVisibleItemIndex
+            ?: 0).coerceIn(0, row.entries.lastIndex)
+
     fun finishFastVerticalScroll() {
         if (!fastVerticalScrolling) return
         val rowIndex = pendingVerticalRowIndex
@@ -329,8 +335,7 @@ internal fun TvModernHomeRows(
             pendingVerticalRowIndex = -1
             return
         }
-        val cardIndex = (TvHomeFocusMemory.focusedIndexByRow[targetRow.key] ?: 0)
-            .coerceIn(0, targetRow.entries.lastIndex)
+        val cardIndex = cardForVerticalEntry(targetRow)
         verticalFocusJob[0]?.cancel()
         verticalFocusJob[0] = verticalScope.launch {
             // Final snap does not animate through intermediary rows. Only
@@ -393,9 +398,7 @@ internal fun TvModernHomeRows(
         pendingVerticalRowIndex = requestedIndex
         lastVerticalInputAt = android.os.SystemClock.uptimeMillis()
         fastInputEpoch++
-        val selectedCard = (TvHomeFocusMemory.focusedIndexByRow[targetRow.key]
-            ?: TvHomeFocusMemory.focusedIndexByRow[availableRows[actualIndex].key] ?: 0)
-            .coerceIn(0, targetRow.entries.lastIndex)
+        val selectedCard = cardForVerticalEntry(targetRow)
 
         // Nuvio-style held scroll: bypass animated per-row focus transactions;
         // a single landing focus is issued when repeat input stops.
@@ -436,17 +439,24 @@ internal fun TvModernHomeRows(
             }
             val changesRowHeight = availableRows[actualIndex].kind.homeRowContentHeight(density) !=
                 targetRow.kind.homeRowContentHeight(density)
-            if (catalogOnly) {
+            val catalogRowVisible = catalogOnly && verticalState.layoutInfo.visibleItemsInfo.any {
+                it.key == targetRow.key && it.offset < verticalState.layoutInfo.viewportEndOffset &&
+                    it.offset + it.size > verticalState.layoutInfo.viewportStartOffset
+            }
+            if (catalogOnly && !catalogRowVisible) {
                 revealCatalogRow(requestedIndex, targetRow, delta > 0)
-            } else if (!onScreen || changesRowHeight) {
+            } else if (!catalogOnly && (!onScreen || changesRowHeight)) {
                 verticalState.animateScrollToItem(requestedIndex, 0)
             }
-            withFrameNanos { }
+            if (!catalogRowVisible) withFrameNanos { }
             if (currentNavigationVisible) return@launch
             verticalFocusToken++
             verticalFocusTarget = HomeVerticalFocusTarget(
                 rowKey = targetRow.key, cardIndex = selectedCard, token = verticalFocusToken,
             )
+            if (catalogRowVisible && !onScreen) {
+                revealCatalogRow(requestedIndex, targetRow, delta > 0)
+            }
             traceHome {
                 "HOME_SCROLL_FINISH axis=vertical cause=dpad target=${targetRow.key} " +
                     "onScreen=$onScreen at=${verticalState.firstVisibleItemIndex}:${verticalState.firstVisibleItemScrollOffset}"
@@ -770,9 +780,9 @@ private fun TvModernHomeRow(
     val suppressRouteBringIntoView by rememberUpdatedState(!active || routeReturnPending)
     val verticalEntryViewportState = remember(row.key) { mutableStateOf(false) }
     var preserveVerticalEntryViewport by verticalEntryViewportState
+    var catalogFrameFollowsCard by remember(row.key, catalogOnly) { mutableStateOf(false) }
 
     val density = LocalDensity.current
-    val defaultBringIntoViewSpec = LocalBringIntoViewSpec.current
     val rowHorizontalPadding = if (catalogOnly) 28.dp else tvSidebarContentStartPadding(MODERN_HOME_CONTENT_START_PADDING)
     // Reserve paint space for the 1.022x focus scale without moving the cards.
     val focusPaintInset = if (catalogOnly) 0.dp else row.kind.focusPaintInset()
@@ -782,14 +792,16 @@ private fun TvModernHomeRow(
     // restore the row position before asking Compose to focus that poster.
     // This row already has external left padding, so the local anchor is 0
     // (or focusPaintInset for scaled Continue Watching cards).
+    val horizontalFocusAnimation = tvTunedSpec(
+        TvMotionGroup.FOCUS, true, tween<Float>(220, easing = TvMotion.EaseOut),
+    )
     val horizontalBringIntoViewSpec = remember(
-        density, defaultBringIntoViewSpec, focusPaintInset, catalogOnly,
+        density, focusPaintInset, horizontalFocusAnimation,
     ) {
         val anchorPx = with(density) { focusPaintInset.toPx() }
         @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
         object : BringIntoViewSpec {
-            override val scrollAnimationSpec: AnimationSpec<Float> =
-                defaultBringIntoViewSpec.scrollAnimationSpec
+            override val scrollAnimationSpec: AnimationSpec<Float> = horizontalFocusAnimation
 
             override fun calculateScrollDistance(
                 offset: Float,
@@ -799,7 +811,7 @@ private fun TvModernHomeRow(
                 // Covered-route handoff preserves the captured viewport. Ordinary
                 // Left/Right and Up/Down still use Nuvio's existing alignment.
                 if (suppressRouteBringIntoView) return 0f
-                if (!catalogOnly && verticalEntryViewportState.value) {
+                if (verticalEntryViewportState.value) {
                     // Up/Down only reveals clipped content; it must not re-anchor
                     // an already visible poster to the start of this row.
                     val extent = kotlin.math.abs(size)
@@ -823,6 +835,20 @@ private fun TvModernHomeRow(
                 }
                 return offset - target
             }
+        }
+    }
+
+    LaunchedEffect(catalogOnly, rowHasFocus, rowState) {
+        if (!catalogOnly || !rowHasFocus) return@LaunchedEffect
+        snapshotFlow {
+            val item = rowState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == focusedIndex }
+            when {
+                !rowState.canScrollForward || preserveVerticalEntryViewport -> true
+                item != null && item.offset <= 0 -> false
+                else -> null
+            }
+        }.collect { follow ->
+            if (follow != null) catalogFrameFollowsCard = follow
         }
     }
 
@@ -878,25 +904,31 @@ private fun TvModernHomeRow(
         val targetIndex = resolveTargetIndex() ?: return@LaunchedEffect
         preserveVerticalEntryViewport = !target.routeReturn
         val visibleTarget = rowState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == targetIndex }
-        val targetFullyVisible = visibleTarget != null &&
-            visibleTarget.offset >= rowState.layoutInfo.viewportStartOffset &&
-            visibleTarget.offset + visibleTarget.size <= rowState.layoutInfo.viewportEndOffset
 
         val entries = if(target.cardKey != null) currentRow.entries else row.entries
-        val restoreIndex = if (catalogOnly) targetIndex else target.restoreFirstCardKey?.let { key ->
+        val restoreIndex = target.restoreFirstCardKey?.let { key ->
             entries.indexOfFirst { it.key == key }.takeIf { it >= 0 }
         } ?: target.restorePosition?.firstVisibleItemIndex
             ?.coerceIn(0, entries.lastIndex) ?: targetIndex
-        val restoreOffset = if (catalogOnly) 0 else target.restorePosition?.firstVisibleItemScrollOffset ?: 0
+        val restoreOffset = target.restorePosition?.firstVisibleItemScrollOffset ?: 0
         val alreadyAnchored = rowState.firstVisibleItemIndex == restoreIndex &&
             rowState.firstVisibleItemScrollOffset == restoreOffset
-        if (!alreadyAnchored && (catalogOnly || target.routeReturn || !targetFullyVisible) &&
-            (target.routeReturn || !rowState.isScrollInProgress)) {
+        if (!alreadyAnchored && (target.routeReturn || visibleTarget == null)) {
             traceHome {
                 "HOME_SCROLL_COMMAND axis=horizontal cause=nuvio_pending_row_focus row=${row.key} " +
                     "targetCard=$targetIndex from=${rowState.firstVisibleItemIndex}:${rowState.firstVisibleItemScrollOffset}"
             }
-            rowState.scrollToItem(restoreIndex, restoreOffset)
+            if (target.routeReturn) {
+                rowState.scrollToItem(restoreIndex, restoreOffset)
+            } else {
+                val layout = rowState.layoutInfo
+                val lastVisible = layout.visibleItemsInfo.lastOrNull()
+                val offset = if (lastVisible != null && targetIndex > lastVisible.index) {
+                    (layout.viewportEndOffset - layout.viewportStartOffset - lastVisible.size)
+                        .coerceAtLeast(0)
+                } else 0
+                rowState.scrollToItem(targetIndex, -offset)
+            }
             withFrameNanos { }
         }
 
@@ -981,6 +1013,9 @@ private fun TvModernHomeRow(
                         .onPreviewKeyEvent { event ->
                             if (event.type == KeyEventType.KeyDown &&
                                 (event.key == Key.DirectionLeft || event.key == Key.DirectionRight)) {
+                                if (catalogOnly && (!rowState.canScrollForward || preserveVerticalEntryViewport)) {
+                                    catalogFrameFollowsCard = true
+                                }
                                 preserveVerticalEntryViewport = false
                             }
                             false
@@ -1063,13 +1098,15 @@ private fun TvModernHomeRow(
                     Box(
                         Modifier.align(Alignment.TopStart)
                             .offset {
-                                // At the scroll limit, the remaining posters keep their
-                                // positions and the focus frame follows the selected card.
-                                val left = if (rowState.canScrollForward) 0 else {
+                                // Keep following on the way back from the scroll limit
+                                // until the selected poster reaches the leading slot.
+                                val left = if (catalogFrameFollowsCard ||
+                                    preserveVerticalEntryViewport || !rowState.canScrollForward
+                                ) {
                                     rowState.layoutInfo.visibleItemsInfo
                                         .firstOrNull { it.index == focusedIndex }
                                         ?.offset?.coerceAtLeast(0) ?: 0
-                                }
+                                } else 0
                                 IntOffset(left, 0)
                             }
                             .width(PosterWidth)

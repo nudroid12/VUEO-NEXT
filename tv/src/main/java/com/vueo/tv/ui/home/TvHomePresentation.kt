@@ -36,7 +36,6 @@ import com.vueo.tv.ui.TvRetainedArtwork
 import com.vueo.tv.ui.tvSidebarContentStartPadding
 import com.vueo.tv.ui.tvSidebarHomeRowsViewportFraction
 import com.vueo.tv.ui.tvSidebarIsPillMode
-import com.vueo.tv.ui.tvSidebarIsHiddenClassic
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
@@ -89,7 +88,6 @@ internal fun TvHomePresentation(
     }
     val contentStartPadding = tvSidebarContentStartPadding(MODERN_HOME_CONTENT_START_PADDING)
     val floatingPillMode = tvSidebarIsPillMode()
-    val hideClassicSidebar = tvSidebarIsHiddenClassic()
     // Topbar focus and visibility no longer drive the Home viewport.
     val rowsViewportFraction = tvSidebarHomeRowsViewportFraction(
         classic = MODERN_HOME_ROWS_VIEWPORT_FRACTION,
@@ -101,18 +99,8 @@ internal fun TvHomePresentation(
 
     LaunchedEffect(catalogOnly) { firstLeftPress = 0L }
 
-    LaunchedEffect(firstLeftPress, active, navigationVisible, routeReturnPending) {
-        val pressedAt = firstLeftPress
-        if (pressedAt == 0L) return@LaunchedEffect
-        if (!active || navigationVisible || routeReturnPending) {
-            firstLeftPress = 0L
-            return@LaunchedEffect
-        }
-        delay((280L - (SystemClock.uptimeMillis() - pressedAt)).coerceAtLeast(0L))
-        if (firstLeftPress == pressedAt) {
-            firstLeftPress = 0L
-            onOpenNavigation()
-        }
+    LaunchedEffect(active, navigationVisible, routeReturnPending) {
+        if (!active || navigationVisible || routeReturnPending) firstLeftPress = 0L
     }
 
     LaunchedEffect(catalogOnly, active, focusedEntry?.key, verticalMotionActive, navigationOwnsFocus) {
@@ -327,11 +315,7 @@ internal fun TvHomePresentation(
                         } else {
                             firstLeftPress = now
                         }
-                    }) else when {
-                        floatingPillMode -> ({})
-                        hideClassicSidebar -> onOpenNavigation
-                        else -> null
-                    },
+                    }) else ({}),
                     onFocused = { row, index, entry ->
                         if (focusedEntry?.key != entry.key || lastFocusedRowKey != row.key) firstLeftPress = 0L
                         TvHomeFocusMemory.activeRowKey = row.key
