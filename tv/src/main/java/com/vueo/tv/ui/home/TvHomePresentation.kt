@@ -6,11 +6,6 @@ import com.vueo.tv.ui.motion.TvMotion
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
@@ -103,7 +98,6 @@ internal fun TvHomePresentation(
 
     var firstLeftPress by remember { mutableLongStateOf(0L) }
     var catalogFocus by remember { mutableStateOf<TvHomeEntry?>(null) }
-    var catalogActionLabel by remember(catalogOnly) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(catalogOnly) { firstLeftPress = 0L }
 
@@ -285,16 +279,13 @@ internal fun TvHomePresentation(
         }
 
         val catalogHeaderHeight = 54.dp
-        val catalogFrameWidth = minOf(maxWidth * .17f, screenHeight * .48f, 154.dp)
-        val catalogFrameHeight = catalogFrameWidth * 1.5f
-        val catalogFrameInset = 24.dp
         if (catalogOnly) {
             val media = catalogFocus?.media
             TvRetainedArtwork(media?.background ?: media?.poster, Modifier.fillMaxSize())
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .74f)))
             if (!navigationVisible) {
                 Text("Home", color = TvDesign.White, fontSize = 20.sp,
-                    modifier = Modifier.align(Alignment.TopStart).padding(start = contentStartPadding, top = 14.dp))
+                    modifier = Modifier.align(Alignment.TopStart).padding(start = 28.dp, top = 14.dp))
                 Text("Catalog Only", color = TvDesign.White.copy(alpha = .82f), fontSize = 14.sp,
                     modifier = Modifier.align(Alignment.TopEnd).padding(end = 32.dp, top = 17.dp))
             }
@@ -346,11 +337,9 @@ internal fun TvHomePresentation(
                         TvHomeFocusMemory.activeRowKey = row.key
                         TvHomeFocusMemory.focusedIndexByRow[row.key] = index
                         if (entry is TvHomeEntry.SeeAll) {
-                            catalogActionLabel = entry.title
                             lastFocusedRowKey = row.key
                             return@TvModernHomeRows
                         }
-                        catalogActionLabel = null
                         val sameRow = lastFocusedRowKey == row.key
                         if (!sameRow || focusedEntry?.key != entry.key) {
                             val now = SystemClock.uptimeMillis()
@@ -367,7 +356,7 @@ internal fun TvHomePresentation(
                     onOpen = onOpen,
                     onPosterLongClick = onLongClick,
                     modifier = if (catalogOnly) {
-                        Modifier.align(Alignment.TopStart).padding(top = catalogHeaderHeight, start = catalogFrameInset + catalogFrameWidth)
+                        Modifier.align(Alignment.TopStart).padding(top = catalogHeaderHeight)
                     } else Modifier.align(Alignment.BottomStart),
                 )
             }
@@ -404,35 +393,6 @@ internal fun TvHomePresentation(
                 )
             }
         }
-        if (catalogOnly && !navigationOwnsFocus) {
-            val entry = focusedEntry
-            val artwork = entry?.media?.let { it.poster ?: it.background }
-                .takeIf { catalogActionLabel == null }
-            val shape = RoundedCornerShape(12.dp)
-            Box(
-                Modifier.align(Alignment.CenterStart)
-                    .padding(start = catalogFrameInset)
-                    .width(catalogFrameWidth).height(catalogFrameHeight)
-                    .clip(shape)
-                    .border(2.dp, TvDesign.Accent, shape),
-                contentAlignment = Alignment.Center,
-            ) {
-                TvRetainedArtwork(
-                    artwork,
-                    Modifier.fillMaxSize(),
-                    fallback = TvDesign.Surface,
-                    slideIn = true,
-                )
-                if (artwork == null) {
-                    Text(
-                        text = catalogActionLabel ?: entry?.media?.name.orEmpty(),
-                        color = TvDesign.White,
-                        modifier = Modifier.padding(12.dp),
-                    )
-                }
-            }
-        }
-
         if (rows.isNotEmpty() && error != null) {
             TvHomeLoadFailure(
                 message = error,

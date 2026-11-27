@@ -15,6 +15,7 @@ import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -749,6 +750,7 @@ private fun TvModernHomeRow(
     val savedIndex = (TvHomeFocusMemory.focusedIndexByRow[row.key] ?: 0)
         .coerceIn(0, row.entries.lastIndex)
     var focusedIndex by remember(row.key) { mutableIntStateOf(savedIndex) }
+    var rowHasFocus by remember(row.key) { mutableStateOf(false) }
     // Persist the actual viewport index + pixel offset, NOT the focused card.
     DisposableEffect(row.key, rowState) {
         onDispose {
@@ -770,9 +772,9 @@ private fun TvModernHomeRow(
 
     val density = LocalDensity.current
     val defaultBringIntoViewSpec = LocalBringIntoViewSpec.current
-    val rowHorizontalPadding = tvSidebarContentStartPadding(MODERN_HOME_CONTENT_START_PADDING)
+    val rowHorizontalPadding = if (catalogOnly) 28.dp else tvSidebarContentStartPadding(MODERN_HOME_CONTENT_START_PADDING)
     // Reserve paint space for the 1.022x focus scale without moving the cards.
-    val focusPaintInset = row.kind.focusPaintInset()
+    val focusPaintInset = if (catalogOnly) 0.dp else row.kind.focusPaintInset()
 
     // Port of NuvioTV 0.8.3-beta ModernHomeRows focus alignment policy.
     // Left/Right keeps the focused poster at the row start; Up/Down must
@@ -780,7 +782,7 @@ private fun TvModernHomeRow(
     // This row already has external left padding, so the local anchor is 0
     // (or focusPaintInset for scaled Continue Watching cards).
     val horizontalBringIntoViewSpec = remember(
-        density, defaultBringIntoViewSpec, focusPaintInset,
+        density, defaultBringIntoViewSpec, focusPaintInset, catalogOnly,
     ) {
         val anchorPx = with(density) { focusPaintInset.toPx() }
         @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
@@ -796,7 +798,7 @@ private fun TvModernHomeRow(
                 // Covered-route handoff preserves the captured viewport. Ordinary
                 // Left/Right and Up/Down still use Nuvio's existing alignment.
                 if (suppressRouteBringIntoView) return 0f
-                if (verticalEntryViewportState.value) {
+                if (!catalogOnly && verticalEntryViewportState.value) {
                     // Up/Down only reveals clipped content; it must not re-anchor
                     // an already visible poster to the start of this row.
                     val extent = kotlin.math.abs(size)
@@ -880,14 +882,14 @@ private fun TvModernHomeRow(
             visibleTarget.offset + visibleTarget.size <= rowState.layoutInfo.viewportEndOffset
 
         val entries = if(target.cardKey != null) currentRow.entries else row.entries
-        val restoreIndex = target.restoreFirstCardKey?.let { key ->
+        val restoreIndex = if (catalogOnly) targetIndex else target.restoreFirstCardKey?.let { key ->
             entries.indexOfFirst { it.key == key }.takeIf { it >= 0 }
         } ?: target.restorePosition?.firstVisibleItemIndex
             ?.coerceIn(0, entries.lastIndex) ?: targetIndex
-        val restoreOffset = target.restorePosition?.firstVisibleItemScrollOffset ?: 0
+        val restoreOffset = if (catalogOnly) 0 else target.restorePosition?.firstVisibleItemScrollOffset ?: 0
         val alreadyAnchored = rowState.firstVisibleItemIndex == restoreIndex &&
             rowState.firstVisibleItemScrollOffset == restoreOffset
-        if (!alreadyAnchored && (target.routeReturn || !targetFullyVisible) &&
+        if (!alreadyAnchored && (catalogOnly || target.routeReturn || !targetFullyVisible) &&
             (target.routeReturn || !rowState.isScrollInProgress)) {
             traceHome {
                 "HOME_SCROLL_COMMAND axis=horizontal cause=nuvio_pending_row_focus row=${row.key} " +
@@ -965,7 +967,7 @@ private fun TvModernHomeRow(
         }
 
         CompositionLocalProvider(LocalBringIntoViewSpec provides horizontalBringIntoViewSpec) {
-            Box(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(start = rowHorizontalPadding - focusPaintInset)
@@ -983,6 +985,7 @@ private fun TvModernHomeRow(
                             false
                         }
                         .focusRequester(rowFocusRequester)
+                        .onFocusChanged { rowHasFocus = it.hasFocus }
                         .focusRestorer {
                             // Match Nuvio: restore the last focused card in this
                             // row, not an arbitrary first visible item.
@@ -996,7 +999,7 @@ private fun TvModernHomeRow(
                     contentPadding = PaddingValues(
                         start = focusPaintInset,
                         top = focusPaintInset,
-                        end = 32.dp,
+                        end = if (catalogOnly) (maxWidth - PosterWidth).coerceAtLeast(0.dp) else 32.dp.coerceAtLeast(focusPaintInset),
                         bottom = focusPaintInset,
                     ),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -1055,6 +1058,14 @@ private fun TvModernHomeRow(
                         )
                     }
                 }
+                if (catalogOnly && rowHasFocus && active && contentFocusEnabled) {
+                    Box(
+                        Modifier.align(Alignment.TopStart)
+                            .width(PosterWidth)
+                            .height(MODERN_HOME_POSTER_HEIGHT)
+                            .border(2.dp, TvDesign.Accent, PosterShape),
+                    )
+                }
             }
         }
     }
@@ -1088,7 +1099,7 @@ private fun TvModernHomeCard(
 
     val width = if (catalogOnly) PosterWidth else kind.cardWidth
     val height = if (catalogOnly) MODERN_HOME_POSTER_HEIGHT else kind.cardHeight
-    val shape = if (kind == TvHomeRowKind.CONTINUE_WATCHING || kind == TvHomeRowKind.COLLECTIONS) ContinueShape else PosterShape
+    val shape = if (!catalogOnly && (kind == TvHomeRowKind.CONTINUE_WATCHING || kind == TvHomeRowKind.COLLECTIONS)) ContinueShape else PosterShape
 
     Box(
         modifier = Modifier
@@ -1202,28 +1213,30 @@ private fun ContinueWatchingCardContent(entry: TvHomeEntry, loadImage: Boolean, 
             highPriority = focused,
         )
 
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        .45f to Color.Transparent,
-                        .78f to TvDesign.Black.copy(alpha = .72f),
-                        1f to TvDesign.Black.copy(alpha = .94f),
+        if (!portrait) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            0f to Color.Transparent,
+                            .45f to Color.Transparent,
+                            .78f to TvDesign.Black.copy(alpha = .72f),
+                            1f to TvDesign.Black.copy(alpha = .94f),
+                        )
                     )
-                )
-        )
+            )
 
-        Row(
-            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(8.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                entry.episodeText()?.let { TvHomeCardBadge(it) }
-            }
-            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
-                entry.remainingText()?.let { TvHomeCardBadge(it) }
+            Row(
+                modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                    entry.episodeText()?.let { TvHomeCardBadge(it) }
+                }
+                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                    entry.remainingText()?.let { TvHomeCardBadge(it) }
+                }
             }
         }
 
@@ -1234,16 +1247,18 @@ private fun ContinueWatchingCardContent(entry: TvHomeEntry, loadImage: Boolean, 
                 .padding(start = 11.dp, end = 11.dp, bottom = 10.dp),
             verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
-            Text(
-                text = entry.media.name,
-                color = TvDesign.White,
-                fontSize = 13.sp,
-                lineHeight = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(8.dp))
+            if (!portrait) {
+                Text(
+                    text = entry.media.name,
+                    color = TvDesign.White,
+                    fontSize = 13.sp,
+                    lineHeight = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(8.dp))
+            }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
