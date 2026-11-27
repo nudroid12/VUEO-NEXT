@@ -158,7 +158,6 @@ internal fun TvEpisodeRangeControls(
         }
         if (native.action == KeyEvent.ACTION_UP) {
             repeatJob?.cancel(); repeatJob = null; heldKey = 0
-            if (focusedIndex in state.groups.indices) state.select(focusedIndex)
         } else if (native.action == KeyEvent.ACTION_DOWN && heldKey != native.keyCode) {
             repeatJob?.cancel()
             val keyCode = native.keyCode
@@ -173,13 +172,6 @@ internal fun TvEpisodeRangeControls(
             }
         }
         return true
-    }
-    // Commit once the focus settles, avoiding repeated episode/image replacement while holding.
-    LaunchedEffect(focusedIndex, rowHasFocus) {
-        if (rowHasFocus && focusedIndex in state.groups.indices) {
-            delay(190L)
-            state.select(focusedIndex)
-        }
     }
     CompositionLocalProvider(LocalBringIntoViewSpec provides noAutomaticScroll) {
     Row(
@@ -204,10 +196,10 @@ internal fun TvEpisodeRangeControls(
                 .onFocusChanged { focused = it.isFocused; if (it.isFocused) { focusedIndex = index; onFocused(); onInteraction() } }
                 .onPreviewKeyEvent { event ->
                     if (event.nativeKeyEvent.keyCode != KeyEvent.KEYCODE_DPAD_DOWN) false
-                    else { if (event.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) { state.select(index); onInteraction(); onDown() }; true }
+                    else { if (event.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) { onInteraction(); onDown() }; true }
                 }
                 .background(if (selected) TvDesign.Accent else if (focused) TvDesign.FocusSurface else TvDesign.SurfaceRaised, shape)
-                .border(if (focused) 2.dp else 1.dp, if (focused) TvDesign.Accent else Color.White.copy(alpha = .15f), shape)
+                .border(if (focused) 2.dp else 1.dp, if (focused && selected) TvDesign.OnAccent else if (focused) TvDesign.Focus else Color.White.copy(alpha = .15f), shape)
                 .clickable { onInteraction(); state.select(index) }.padding(horizontal = 14.dp, vertical = 8.dp)) {
                 Text("${group.first().episode}–${group.last().episode}", color = if (selected) TvDesign.OnAccent else Color.White, fontSize = 11.sp)
             }

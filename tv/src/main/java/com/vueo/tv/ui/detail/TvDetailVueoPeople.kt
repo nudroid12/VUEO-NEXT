@@ -220,7 +220,7 @@ TvTabMarkerHost {
                 },
                 fontSize = 19.sp,
                 lineHeight = 22.sp,
-                fontWeight = if (active == tab) FontWeight.Medium else FontWeight.Normal,
+                fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Medium,
                 modifier = Modifier.tvTabMarker(active == tab)
                     .focusRequester(requester)
                     .focusProperties {
@@ -819,15 +819,15 @@ TvTabMarkerHost {
                 var focused by remember(mediaKey, tab) { mutableStateOf(false) }
                 Text(
                     text = tab.label,
-                    color = if (focused || active == tab) TvDesign.Accent else TvDesign.Muted,
+                    color = if (focused) TvDesign.White else TvDesign.Muted,
                     fontSize = 19.sp,
                     lineHeight = 22.sp,
-                    fontWeight = if (active == tab) FontWeight.Medium else FontWeight.Normal,
+                    fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Medium,
                     modifier = Modifier.tvTabMarker(active == tab)
                         .focusRequester(tabRequesters.getValue(tab))
                         .focusProperties {
                             up = upRequester
-                            down = contentRequesters.getValue(tab)
+                            down = contentRequesters.getValue(active)
                             left = available.getOrNull(index - 1)?.let(tabRequesters::getValue) ?: FocusRequester.Cancel
                             right = available.getOrNull(index + 1)?.let(tabRequesters::getValue) ?: FocusRequester.Cancel
                         }
@@ -836,11 +836,11 @@ TvTabMarkerHost {
                                 Key.DirectionDown -> {
                                     if (event.type == KeyEventType.KeyDown) {
                                         enterContentJob?.cancel()
-                                        selected = tab
+                                        val contentTab = active
                                         enterContentJob = focusScope.launch {
                                             // Let the selected tab compose before scrolling its row.
                                             withFrameNanos { }
-                                            val rowState = when (tab) {
+                                            val rowState = when (contentTab) {
                                                 VueoCompanyTab.CAST -> castListState
                                                 VueoCompanyTab.PRODUCTION -> productionListState
                                                 VueoCompanyTab.NETWORK -> networkListState
@@ -849,8 +849,8 @@ TvTabMarkerHost {
                                             // Scroll may materialize the previously offscreen first card.
                                             repeat(3) {
                                                 withFrameNanos { }
-                                                if (!focused || selected != tab) return@launch
-                                                if (runCatching { contentRequesters.getValue(tab).requestFocus() }.getOrDefault(false)) {
+                                                if (!focused || (selected.takeIf { it in available } ?: available.first()) != contentTab) return@launch
+                                                if (runCatching { contentRequesters.getValue(contentTab).requestFocus() }.getOrDefault(false)) {
                                                     return@launch
                                                 }
                                             }
@@ -868,10 +868,7 @@ TvTabMarkerHost {
                                 else -> false
                             }
                         }
-                        .onFocusChanged {
-                            focused = it.isFocused
-                            if (it.isFocused) selected = tab
-                        }
+                        .onFocusChanged { focused = it.isFocused }
                         .clickable { selected = tab }
                         .padding(vertical = 4.dp),
                 )
