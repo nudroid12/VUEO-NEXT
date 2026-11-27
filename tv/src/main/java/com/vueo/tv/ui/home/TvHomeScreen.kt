@@ -184,15 +184,31 @@ fun TvHomeScreen(
                 retainedState.catalogRows = freshRows.map { fresh ->
                     val previous = displayedById[fresh.id]
                     val rowKey = "catalog:${fresh.id}"
-                    val reordered = previous != null &&
-                        fresh.items.take(previous.items.size).map { it.type to it.id } !=
-                        previous.items.map { it.type to it.id }
-                    if (!explicitRetry && previous != null && reordered && protectedKey == rowKey) {
+                    val previousKeys = previous?.items.orEmpty().map { it.type to it.id }
+                    val freshKeys = fresh.items.map { it.type to it.id }
+                    val reordered = freshKeys.take(previousKeys.size) != previousKeys
+                    val existing = previousKeys.toHashSet()
+                    val added = freshKeys.takeWhile { it !in existing }.size
+                    val overlap = freshKeys.drop(added)
+                    val canPrepend = !explicitRetry && previous != null && added > 0 &&
+                        overlap.isNotEmpty() && overlap == previousKeys.take(overlap.size)
+                    if (canPrepend && previous != null) {
+                        retainedState.deferredCatalogRows.remove(fresh.id)
+                        // Reload the raw provider cursor while retaining already loaded cards.
+                        // The number of visible additions can differ from the provider's raw count.
+                        pagedSources[rowKey]?.let { retainedState.catalogPagination.reset(it, retainItems = true) }
+                        fresh.copy(items = fresh.items.take(added) + previous.items)
+                    } else if (!explicitRetry && previous != null && freshKeys.isNotEmpty() &&
+                        freshKeys.size < previousKeys.size && freshKeys == previousKeys.take(freshKeys.size)
+                    ) {
+                        retainedState.deferredCatalogRows.remove(fresh.id)
+                        fresh.copy(items = fresh.items + previous.items.drop(freshKeys.size))
+                    } else if (!explicitRetry && previous != null && reordered && protectedKey == rowKey) {
                         retainedState.deferredCatalogRows[fresh.id] = fresh
                         previous
                     } else {
                         retainedState.deferredCatalogRows.remove(fresh.id)
-                        if (reordered) pagedSources[rowKey]?.let(retainedState.catalogPagination::reset)
+                        if (reordered) pagedSources[rowKey]?.let { retainedState.catalogPagination.reset(it) }
                         fresh
                     }
                 }
@@ -399,7 +415,7 @@ fun TvHomeScreen(
     }
     fun requestNextCatalogPage(row: TvHomeRow, index: Int): Boolean {
         val source = pagedCatalogs[row.key] ?: return false
-        val nearEnd = index > 0 && row.entries.lastIndex - index < 5
+        val nearEnd = index >= (row.entries.size - 4).coerceAtLeast(0)
         if (!active || actionEntry != null || (!nearEnd && index != row.entries.lastIndex)) return false
         return pagination?.request(paginationScope, runtime, row, source) == true
     }
@@ -492,7 +508,7 @@ fun TvHomeScreen(
                     retainedState.catalogRows = retainedState.catalogRows.map { displayed ->
                         if ("catalog:${displayed.id}" == rowKey) displayed
                         else deferred.remove(displayed.id)?.also {
-                            pagedCatalogs["catalog:${displayed.id}"]?.let(retainedState.catalogPagination::reset)
+                            pagedCatalogs["catalog:${displayed.id}"]?.let { retainedState.catalogPagination.reset(it) }
                         } ?: displayed
                     }
                 }

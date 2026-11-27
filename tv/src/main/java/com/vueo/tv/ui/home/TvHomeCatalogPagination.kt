@@ -54,8 +54,9 @@ internal class TvHomeCatalogPagination(
         return if (appended.isEmpty()) row else row.copy(entries = row.entries + appended)
     }
 
-    fun reset(source: CollectionCatalogSource) {
-        pages.remove(source)
+    fun reset(source: CollectionCatalogSource, retainItems: Boolean = false) {
+        val previous = pages.remove(source)
+        if (retainItems && previous != null) pages[source] = PageState(items = previous.items)
         loading.remove(source)
         retryAfter.remove(source)
     }
@@ -75,6 +76,7 @@ internal class TvHomeCatalogPagination(
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
                 val existing = row.entries.mapTo(hashSetOf()) { it.media.type to it.media.id }
+                initial.items.forEach { existing.add(it.type to it.id) }
                 var state = initial
                 // Page zero discovers the raw cursor. The displayed row may
                 // already contain that page, or hide some of its titles.
