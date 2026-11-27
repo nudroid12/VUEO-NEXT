@@ -832,25 +832,6 @@ private fun TvModernHomeRow(
     // restore the row position before asking Compose to focus that poster.
     // This row already has external left padding, so the local anchor is 0
     // (or focusPaintInset for scaled Continue Watching cards).
-    var horizontalInputPending by remember(row.key) { mutableStateOf(false) }
-    var horizontalSlideKey by remember(row.key) { mutableStateOf<String?>(null) }
-    LaunchedEffect(horizontalSlideKey, rowState, active, contentFocusEnabled) {
-        val key = horizontalSlideKey ?: return@LaunchedEffect
-        if (!active || !contentFocusEnabled) {
-            horizontalSlideKey = null
-            return@LaunchedEffect
-        }
-        val layout = rowState.layoutInfo
-        val item = layout.visibleItemsInfo.firstOrNull { it.key == key }
-        if (item == null) {
-            val index = currentRow.entries.indexOfFirst { it.key == key }
-            if (index >= 0) rowState.animateScrollToItem(index)
-        } else if (item.offset != 0) {
-            rowState.animateScrollBy(item.offset.toFloat(), tween(durationMillis = 180))
-        }
-        if (horizontalSlideKey == key) horizontalSlideKey = null
-    }
-
     val horizontalBringIntoViewSpec = remember(density, defaultBringIntoViewSpec, focusPaintInset) {
         val anchorPx = with(density) { focusPaintInset.toPx() }
         @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
@@ -865,7 +846,7 @@ private fun TvModernHomeRow(
             ): Float {
                 // Covered-route handoff preserves the captured viewport. Ordinary
                 // Left/Right and Up/Down still use Nuvio's existing alignment.
-                if (suppressRouteBringIntoView || horizontalInputPending || horizontalSlideKey != null) return 0f
+                if (suppressRouteBringIntoView) return 0f
                 if (verticalEntryViewportState.value) {
                     // Up/Down only reveals clipped content; it must not re-anchor
                     // an already visible poster to the start of this row.
@@ -963,8 +944,6 @@ private fun TvModernHomeRow(
         row.entries.map { it.key } else null
     LaunchedEffect(verticalFocusTarget?.token, contentFocusEnabled, active, returnKeys) {
         val target = verticalFocusTarget ?: return@LaunchedEffect
-        horizontalInputPending = false
-        horizontalSlideKey = null
         if (!active || !contentFocusEnabled || target.rowKey != row.key || row.entries.isEmpty()) return@LaunchedEffect
         fun resolveTargetIndex(): Int? {
             val entries = if(target.cardKey != null) currentRow.entries else row.entries
@@ -1123,9 +1102,6 @@ private fun TvModernHomeRow(
                             if (event.type == KeyEventType.KeyDown &&
                                 (event.key == Key.DirectionLeft || event.key == Key.DirectionRight)) {
                                 preserveVerticalEntryViewport = false
-                                horizontalInputPending = true
-                            } else if (event.type == KeyEventType.KeyUp) {
-                                horizontalInputPending = false
                             }
                             if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionRight &&
                                 focusedIndex == row.entries.lastIndex
@@ -1185,8 +1161,6 @@ private fun TvModernHomeRow(
                             contentFocusEnabled = contentFocusEnabled,
                             onLeftAtStart = onLeftAtRowStart.takeIf { index == 0 },
                             onFocused = {
-                                if (horizontalInputPending) horizontalSlideKey = entry.key
-                                horizontalInputPending = false
                                 focusedCardKey = entry.key
                                 val returningToThisCard = verticalFocusTarget?.let {
                                     it.routeReturn && (if(it.cardKey != null) it.cardKey == entry.key else it.cardIndex == index)
