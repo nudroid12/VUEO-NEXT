@@ -98,6 +98,7 @@ internal data class HomeRouteFocusAnchor(
 internal object TvHomeFocusMemory {
     var activeRowKey: String? = null
     val focusedIndexByRow = mutableMapOf<String, Int>()
+    val focusedKeyByRow = mutableMapOf<String, String>()
     val horizontalPositionByRow = mutableMapOf<String, TvHomeHorizontalPosition>()
 }
 
@@ -162,4 +163,12 @@ private fun formatMinutes(totalMinutes: Long): String {
         hours > 0L -> "${hours}h"
         else -> "${minutes}m"
     }
+}
+
+internal fun TvHomeRow.savedFocusIndex(fallback: Int = 0): Int {
+    val savedIndex = (TvHomeFocusMemory.focusedIndexByRow[key] ?: fallback)
+        .coerceIn(0, entries.lastIndex.coerceAtLeast(0))
+    val savedKey = TvHomeFocusMemory.focusedKeyByRow[key] ?: return savedIndex
+    if (entries.getOrNull(savedIndex)?.key == savedKey) return savedIndex
+    return entries.indexOfFirst { it.key == savedKey }.takeIf { it >= 0 } ?: savedIndex
 }

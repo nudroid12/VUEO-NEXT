@@ -1,5 +1,8 @@
 package com.vueo.tv.home
 
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.platform.LocalContext
+import com.vueo.tv.ui.tvPrefetchImage
 import androidx.compose.ui.unit.Density
 import com.vueo.tv.ui.motion.*
 import androidx.compose.animation.core.AnimationSpec
@@ -10,7 +13,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
-import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
@@ -39,7 +41,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.derivedStateOf
@@ -80,12 +81,11 @@ import com.vueo.tv.ui.TvNetworkImage
 import com.vueo.tv.ui.tvPosterActivation
 import com.vueo.tv.ui.tvSidebarIsPillMode
 import com.vueo.tv.ui.motion.TvMotion
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 
 // Lazy diagnostic messages: no string construction while diagnostics is OFF.
 private inline fun traceHome(build: () -> String) {
@@ -168,6 +168,7 @@ internal fun TvModernHomeRows(
     // Discard horizontal positions alongside that existing focus reset.
     if (TvHomeFocusMemory.activeRowKey == null && TvHomeFocusMemory.focusedIndexByRow.isEmpty()) {
         TvHomeFocusMemory.horizontalPositionByRow.clear()
+        TvHomeFocusMemory.focusedKeyByRow.clear()
     }
     val verticalCacheWindow = remember {
         LazyLayoutCacheWindow(ahead = VerticalRowCacheExtent, behind = VerticalRowCacheExtent)
@@ -177,16 +178,13 @@ internal fun TvModernHomeRows(
     // Keep LazyListState instances above the LazyColumn items so their positions
     // survive row disposal/recomposition during vertical navigation.
     val rowListStates = remember { mutableMapOf<String, LazyListState>() }
-    val verticalScope = rememberCoroutineScope()
-    val verticalFocusJob = remember { arrayOfNulls<Job>(1) }
     var verticalFocusToken by remember { mutableIntStateOf(0) }
     var verticalFocusTarget by remember { mutableStateOf<HomeVerticalFocusTarget?>(null) }
-    // Nuvio-style fast DPAD vertical scrolling: key repeat advances a virtual
-    // row cursor immediately; do not wait for every intermediate focus handoff.
-    var pendingVerticalRowIndex by remember { mutableIntStateOf(-1) }
     var fastVerticalScrolling by remember { mutableStateOf(false) }
-    var lastVerticalInputAt by remember { mutableLongStateOf(0L) }
+    var fastScrollDirection by remember { mutableIntStateOf(0) }
     var fastInputEpoch by remember { mutableIntStateOf(0) }
+    var lastHorizontalInputAt by remember { mutableLongStateOf(0L) }
+    var lastHorizontalKey by remember { mutableStateOf<Key?>(null) }
     val currentMotionCallback by rememberUpdatedState(onVerticalMotionChanged)
     val currentRows by rememberUpdatedState(rows)
     val currentNavigationVisible by rememberUpdatedState(navigationVisible)
@@ -221,7 +219,8 @@ internal fun TvModernHomeRows(
         // This also owns initial focus when Home was recreated after Sources.
         // Do not let the later menu effect replay an initial reset over this return.
         appliedFocusResetToken = focusResetToken
-        verticalFocusJob[0]?.cancel()
+        fastScrollDirection = 0
+        fastVerticalScrolling = false
         if (verticalState.firstVisibleItemIndex != verticalIndex ||
             verticalState.firstVisibleItemScrollOffset != verticalOffset
         ) {
@@ -245,10 +244,8 @@ internal fun TvModernHomeRows(
         val rowIndex = rows.indexOfFirst { it.key == TvHomeFocusMemory.activeRowKey }
             .takeIf { it >= 0 } ?: rows.indexOfFirst { it.key.startsWith("catalog:") }.coerceAtLeast(0)
         val row = rows[rowIndex]
-        val cardIndex = (TvHomeFocusMemory.focusedIndexByRow[row.key] ?: 0)
-            .coerceIn(0, row.entries.lastIndex)
-        verticalFocusJob[0]?.cancel()
-        pendingVerticalRowIndex = -1
+        val cardIndex = row.savedFocusIndex()
+        fastScrollDirection = 0
         fastVerticalScrolling = false
         verticalState.scrollToItem(rowIndex)
         verticalFocusToken++
@@ -256,11 +253,24 @@ internal fun TvModernHomeRows(
     }
 
     val density = LocalDensity.current
-    val verticalBringIntoViewSpec = remember {
+    val defaultBringIntoViewSpec = LocalBringIntoViewSpec.current
+    val alignRowsToTop = rowsLayout.bottomPadding >= rowsLayout.viewportHeight
+    val suppressVerticalRelocation by rememberUpdatedState(
+        !active || routeReturnPending || navigationVisible || fastVerticalScrolling ||
+            verticalFocusTarget != null,
+    )
+    val verticalBringIntoViewSpec = remember(alignRowsToTop, density) {
+        val topInset = with(density) { 8.dp.toPx() }
         object : BringIntoViewSpec {
-            // Focus changes below own the vertical scroll. Returning zero stops
-            // the framework from launching a competing relocation animation.
-            override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float = 0f
+            override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+                if (suppressVerticalRelocation) return 0f
+                if (alignRowsToTop) return offset - topInset
+                return when {
+                    offset < 0f || size > containerSize -> offset
+                    offset + size > containerSize -> offset + size - containerSize
+                    else -> 0f
+                }
+            }
         }
     }
 
@@ -300,187 +310,66 @@ internal fun TvModernHomeRows(
             .collect { currentMotionCallback(it) }
     }
 
-    // A trailing viewport of padding lets the hero layout align even the last
-    // row at the top. A tighter viewport reveals rows within the available space.
-    val alignRowsToTop = rowsLayout.bottomPadding >= rowsLayout.viewportHeight
-
-    suspend fun revealRow(index: Int, row: TvHomeRow, movingDown: Boolean, animated: Boolean) {
-        val layout = verticalState.layoutInfo
-        val item = layout.visibleItemsInfo.firstOrNull { it.key == row.key }
-        if (alignRowsToTop || item == null) {
-            val viewportHeight = layout.viewportEndOffset - layout.viewportStartOffset
-            val rowHeight = with(density) {
-                row.kind.homeRowContentHeight(this, rowsLayout.portraitCards).roundToPx()
-            }
-            val offset = if (!alignRowsToTop && movingDown) (viewportHeight - rowHeight).coerceAtLeast(0) else 0
-            if (animated) verticalState.animateScrollToItem(index, -offset)
-            else verticalState.scrollToItem(index, -offset)
-            if (alignRowsToTop) return
-        }
-
-        val updated = verticalState.layoutInfo
-        val visible = updated.visibleItemsInfo.firstOrNull { it.key == row.key } ?: return
-        val top = visible.offset - updated.viewportStartOffset
-        val bottom = visible.offset + visible.size - updated.viewportEndOffset
-        val distance = when {
-            visible.size > updated.viewportEndOffset - updated.viewportStartOffset -> top
-            top < 0 -> top
-            bottom > 0 -> bottom
-            else -> 0
-        }
-        if (distance != 0) {
-            if (animated) verticalState.animateScrollBy(distance.toFloat())
-            else verticalState.scroll { scrollBy(distance.toFloat()) }
-        }
-    }
-
-    fun cardForVerticalEntry(row: TvHomeRow): Int =
-        (TvHomeFocusMemory.focusedIndexByRow[row.key]
-            ?: rowListStates[row.key]?.firstVisibleItemIndex
-            ?: TvHomeFocusMemory.horizontalPositionByRow[row.key]?.firstVisibleItemIndex
-            ?: 0).coerceIn(0, row.entries.lastIndex)
-
     fun finishFastVerticalScroll() {
-        if (!fastVerticalScrolling) return
-        val rowIndex = pendingVerticalRowIndex
-        val targetRow = currentRows.getOrNull(rowIndex) ?: run {
+        val direction = fastScrollDirection
+        if (direction == 0) return
+        fastScrollDirection = 0
+        if (!fastVerticalScrolling || currentNavigationVisible) {
             fastVerticalScrolling = false
-            pendingVerticalRowIndex = -1
             return
         }
-        if (targetRow.entries.isEmpty()) {
+        val layout = verticalState.layoutInfo
+        val visibleRows = layout.visibleItemsInfo.filter {
+            it.offset < layout.viewportEndOffset &&
+                it.offset + it.size > layout.viewportStartOffset &&
+                currentRows.getOrNull(it.index)?.entries?.isNotEmpty() == true
+        }
+        val landing = visibleRows.lastOrNull()?.takeIf {
+            it.index == currentRows.lastIndex && it.offset + it.size <= layout.viewportEndOffset
+        } ?: visibleRows.firstOrNull()?.takeIf { direction < 0 && it.offset > -it.size / 2 }
+            ?: visibleRows.firstOrNull { it.offset >= layout.viewportStartOffset }
+            ?: visibleRows.firstOrNull()
+        val row = landing?.let { currentRows.getOrNull(it.index) }
+        if (row == null) {
             fastVerticalScrolling = false
-            pendingVerticalRowIndex = -1
             return
         }
-        val cardIndex = cardForVerticalEntry(targetRow)
-        verticalFocusJob[0]?.cancel()
-        verticalFocusJob[0] = verticalScope.launch {
-            // Final snap does not animate through intermediary rows. Only
-            // the selected destination gets focus when D-pad is released.
-            revealRow(rowIndex, targetRow, rowIndex >= verticalState.firstVisibleItemIndex, animated = !alignRowsToTop)
-            withFrameNanos { }
-            if (currentNavigationVisible) {
-                fastVerticalScrolling = false
-                pendingVerticalRowIndex = -1
-                return@launch
-            }
-            verticalFocusToken++
-            verticalFocusTarget = HomeVerticalFocusTarget(
-                rowKey = targetRow.key,
-                cardIndex = cardIndex,
-                token = verticalFocusToken,
-                fastLanding = true,
-            )
-            traceHome {
-                "HOME_SCROLL_FINISH axis=vertical cause=nuvio_fast_release target=${targetRow.key} " +
-                    "card=$cardIndex at=${verticalState.firstVisibleItemIndex}:${verticalState.firstVisibleItemScrollOffset}"
-            }
-        }
+        verticalFocusToken++
+        verticalFocusTarget = HomeVerticalFocusTarget(
+            row.key, row.savedFocusIndex(), verticalFocusToken, fastLanding = true,
+        )
     }
 
-    // KeyUp is primary; idle timeout is the fallback for remotes that do not
-    // reliably deliver key release after long press / focus detachment.
+    LaunchedEffect(fastScrollDirection, active, navigationVisible, routeReturnPending) {
+        val direction = fastScrollDirection
+        if (direction == 0) return@LaunchedEffect
+        if (!active || navigationVisible || routeReturnPending) {
+            fastScrollDirection = 0
+            fastVerticalScrolling = false
+            return@LaunchedEffect
+        }
+        val speed = with(density) { 3200.dp.toPx() }
+        verticalState.scroll {
+            var previousFrame = withFrameNanos { it }
+            while (true) {
+                val frame = withFrameNanos { it }
+                val elapsed = ((frame - previousFrame) / 1_000_000_000f).coerceAtMost(0.048f)
+                previousFrame = frame
+                val layout = verticalState.layoutInfo
+                if (direction > 0 && layout.visibleItemsInfo.any {
+                    it.index == currentRows.lastIndex && it.offset + it.size <= layout.viewportEndOffset
+                }) break
+                val distance = direction * speed * elapsed
+                if (distance != 0f && scrollBy(distance) == 0f) break
+            }
+        }
+        if (fastScrollDirection == direction) finishFastVerticalScroll()
+    }
+
     LaunchedEffect(fastInputEpoch) {
-        if (!fastVerticalScrolling) return@LaunchedEffect
-        delay(190L)
-        if (fastVerticalScrolling &&
-            android.os.SystemClock.uptimeMillis() - lastVerticalInputAt >= 175L
-        ) finishFastVerticalScroll()
-    }
-
-    fun moveVertical(delta: Int, repeatCount: Int): Boolean {
-        if (currentNavigationVisible) return true
-        val availableRows = currentRows
-        if (availableRows.isEmpty()) return true
-        val actualIndex = availableRows.indexOfFirst {
-            it.key == TvHomeFocusMemory.activeRowKey
-        }.takeIf { it >= 0 } ?: 0
-        // A repeat continues from the previous requested row, not the still
-        // focused card; otherwise Up repeats keep requesting the same row.
-        val baseIndex = pendingVerticalRowIndex.takeIf { it in availableRows.indices }
-            ?: actualIndex
-        val requestedIndex = baseIndex + delta
-        if (requestedIndex !in availableRows.indices) {
-            if (requestedIndex < 0 && repeatCount == 0 && !fastVerticalScrolling &&
-                actualIndex == 0
-            ) onUpFromFirstRow()
-            return true
-        }
-        val targetRow = availableRows[requestedIndex]
-        if (targetRow.entries.isEmpty()) return true
-        pendingVerticalRowIndex = requestedIndex
-        lastVerticalInputAt = android.os.SystemClock.uptimeMillis()
-        fastInputEpoch++
-        val selectedCard = cardForVerticalEntry(targetRow)
-
-        // Nuvio-style held scroll: bypass animated per-row focus transactions;
-        // a single landing focus is issued when repeat input stops.
-        if (repeatCount > 0 || fastVerticalScrolling) {
-            fastVerticalScrolling = true
-            verticalFocusTarget = null
-            verticalFocusJob[0]?.cancel()
-            traceHome {
-                "HOME_SCROLL_COMMAND axis=vertical cause=nuvio_fast_hold target=${targetRow.key} " +
-                    "repeat=$repeatCount pendingIndex=$requestedIndex"
-            }
-            verticalFocusJob[0] = verticalScope.launch {
-                revealRow(requestedIndex, targetRow, delta > 0, animated = !alignRowsToTop)
-            }
-            return true
-        }
-
-        verticalFocusJob[0]?.cancel()
-        verticalFocusJob[0] = verticalScope.launch {
-            traceHome {
-                "HOME_SCROLL_COMMAND axis=vertical cause=dpad fromRow=${availableRows[actualIndex].key} " +
-                    "toRow=${targetRow.key} fromCard=${TvHomeFocusMemory.focusedIndexByRow[availableRows[actualIndex].key]} " +
-                    "toCard=$selectedCard delta=$delta " +
-                    "offset=${verticalState.firstVisibleItemIndex}:${verticalState.firstVisibleItemScrollOffset}"
-            }
-            val onScreen = verticalState.layoutInfo.visibleItemsInfo.any { visible ->
-                if (visible.key != targetRow.key) false else {
-                    val viewportStart = verticalState.layoutInfo.viewportStartOffset
-                    val viewportEnd = verticalState.layoutInfo.viewportEndOffset
-                    val fitsViewport = visible.size <= viewportEnd - viewportStart
-                    if (fitsViewport) {
-                        visible.offset >= viewportStart && visible.offset + visible.size <= viewportEnd
-                    } else {
-                        visible.offset < viewportEnd && visible.offset + visible.size > viewportStart
-                    }
-                }
-            }
-            val fromHeight = availableRows[actualIndex].kind.homeRowContentHeight(density, rowsLayout.portraitCards)
-            val toHeight = targetRow.kind.homeRowContentHeight(density, rowsLayout.portraitCards)
-            val moveViewport = !onScreen || fromHeight != toHeight
-            val focusBeforeScroll = !alignRowsToTop && verticalState.layoutInfo.visibleItemsInfo.any {
-                it.key == targetRow.key && it.offset < verticalState.layoutInfo.viewportEndOffset &&
-                    it.offset + it.size > verticalState.layoutInfo.viewportStartOffset
-            }
-            if (moveViewport && !focusBeforeScroll) {
-                revealRow(requestedIndex, targetRow, delta > 0, animated = true)
-            }
-            if (!focusBeforeScroll) withFrameNanos { }
-            if (currentNavigationVisible) return@launch
-            verticalFocusToken++
-            verticalFocusTarget = HomeVerticalFocusTarget(
-                rowKey = targetRow.key, cardIndex = selectedCard, token = verticalFocusToken,
-            )
-            if (moveViewport && focusBeforeScroll) {
-                revealRow(requestedIndex, targetRow, delta > 0, animated = true)
-            }
-            traceHome {
-                "HOME_SCROLL_FINISH axis=vertical cause=dpad target=${targetRow.key} " +
-                    "onScreen=$onScreen at=${verticalState.firstVisibleItemIndex}:${verticalState.firstVisibleItemScrollOffset}"
-            }
-        }
-        return true
-    }
-
-    DisposableEffect(verticalState) {
-        onDispose {
-            verticalFocusJob[0]?.cancel()
-        }
+        if (fastScrollDirection == 0) return@LaunchedEffect
+        delay(160L)
+        finishFastVerticalScroll()
     }
 
     // Initial Home focus is separate from horizontal LazyRow position.
@@ -501,8 +390,6 @@ internal fun TvModernHomeRows(
         TvHomeFocusMemory.activeRowKey = targetRow.key
         TvHomeFocusMemory.focusedIndexByRow[targetRow.key] = targetCardIndex
         verticalFocusTarget = null
-        verticalFocusJob[0]?.cancel()
-        pendingVerticalRowIndex = -1
         fastVerticalScrolling = false
         traceHome {
             "HOME_SCROLL_COMMAND axis=vertical cause=initial_focus_restore target=${targetRow.key} " +
@@ -531,8 +418,6 @@ internal fun TvModernHomeRows(
             return@LaunchedEffect
         }
         val row = available[targetIndex]
-        verticalFocusJob[0]?.cancel()
-        pendingVerticalRowIndex = -1
         fastVerticalScrolling = false
         TvHomeFocusMemory.activeRowKey = row.key
         verticalState.scrollToItem(targetIndex)
@@ -551,9 +436,7 @@ internal fun TvModernHomeRows(
                     "vertical=${verticalState.firstVisibleItemIndex}:${verticalState.firstVisibleItemScrollOffset}"
             }
             verticalFocusTarget = null
-            verticalFocusJob[0]?.cancel()
-            verticalFocusJob[0] = null
-            pendingVerticalRowIndex = -1
+            fastScrollDirection = 0
             fastVerticalScrolling = false
             previewReturnRowKey = TvHomeFocusMemory.activeRowKey
             previewReturnCardIndex = previewReturnRowKey?.let {
@@ -581,8 +464,6 @@ internal fun TvModernHomeRows(
         val cardIndex = (if (row.key == previewReturnRowKey) previewReturnCardIndex else
             TvHomeFocusMemory.focusedIndexByRow[row.key] ?: 0).coerceIn(0, row.entries.lastIndex)
         verticalFocusTarget = null
-        verticalFocusJob[0]?.cancel()
-        pendingVerticalRowIndex = -1
         fastVerticalScrolling = false
         traceHome {
             "HOME_SCROLL_COMMAND axis=vertical cause=nav_return target=${row.key} card=$cardIndex " +
@@ -627,22 +508,50 @@ internal fun TvModernHomeRows(
                 .fillMaxWidth()
                 .height(rowsLayout.viewportHeight)
                 .onPreviewKeyEvent { event ->
-                    when (event.key) {
-                        Key.DirectionUp, Key.DirectionDown -> {
-                            when (event.type) {
-                                KeyEventType.KeyDown -> moveVertical(
-                                    if (event.key == Key.DirectionUp) -1 else 1,
-                                    event.nativeKeyEvent.repeatCount,
-                                )
-                                KeyEventType.KeyUp -> {
-                                    finishFastVerticalScroll()
-                                    true
-                                }
-                                else -> false
-                            }
-                        }
-                        else -> false
+                    val key = event.key
+                    val horizontal = key == Key.DirectionLeft || key == Key.DirectionRight
+                    val vertical = key == Key.DirectionUp || key == Key.DirectionDown
+                    if ((!horizontal && !vertical) || !active || navigationVisible || routeReturnPending) {
+                        return@onPreviewKeyEvent false
                     }
+                    if (event.type == KeyEventType.KeyUp) {
+                        if (vertical) finishFastVerticalScroll()
+                        if (horizontal) lastHorizontalKey = null
+                        return@onPreviewKeyEvent false
+                    }
+                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    val native = event.nativeKeyEvent
+                    if (horizontal) {
+                        finishFastVerticalScroll()
+                        if (native.repeatCount > 0 && key == lastHorizontalKey &&
+                            native.eventTime - lastHorizontalInputAt < 80L
+                        ) return@onPreviewKeyEvent true
+                        lastHorizontalKey = key
+                        lastHorizontalInputAt = native.eventTime
+                        return@onPreviewKeyEvent false
+                    }
+                    val movingUp = key == Key.DirectionUp
+                    val activeRow = TvHomeFocusMemory.activeRowKey
+                    if (native.repeatCount == 0) {
+                        finishFastVerticalScroll()
+                        if (movingUp && activeRow == currentRows.firstOrNull()?.key) {
+                            onUpFromFirstRow()
+                            return@onPreviewKeyEvent true
+                        }
+                        return@onPreviewKeyEvent !movingUp && activeRow == currentRows.lastOrNull()?.key
+                    }
+                    val canScroll = if (movingUp) verticalState.canScrollBackward else verticalState.canScrollForward
+                    val layout = verticalState.layoutInfo
+                    val atLastRow = !movingUp && layout.visibleItemsInfo.any {
+                        it.index == currentRows.lastIndex && it.offset + it.size <= layout.viewportEndOffset
+                    }
+                    if (fastScrollDirection != 0 || (canScroll && !atLastRow)) {
+                        verticalFocusTarget = null
+                        fastVerticalScrolling = true
+                        fastScrollDirection = if (movingUp) -1 else 1
+                        fastInputEpoch++
+                    }
+                    true
                 }
                 .focusRequester(contentFocusRequester)
                 .focusRestorer { focusRestorer() }
@@ -665,6 +574,13 @@ internal fun TvModernHomeRows(
                         }
                     }
                 }
+                val rowImmediatelyAhead by remember(verticalState, rowIndex) {
+                    derivedStateOf {
+                        val layout = verticalState.layoutInfo
+                        val last = layout.visibleItemsInfo.lastOrNull { it.offset < layout.viewportEndOffset }
+                        last != null && rowIndex == last.index + 1
+                    }
+                }
                 val rowState = remember(row.key) {
                     rowListStates.getOrPut(row.key) {
                         val position = TvHomeFocusMemory.horizontalPositionByRow[row.key]
@@ -678,6 +594,8 @@ internal fun TvModernHomeRows(
                 }
                 TvModernHomeRow(
                     rowVisible = rowVisible,
+                    defaultBringIntoViewSpec = defaultBringIntoViewSpec,
+                    prefetchFirstCard = !fastVerticalScrolling && rowImmediatelyAhead,
                     rowsLayout = rowsLayout,
                     row = row,
                     rowState = rowState,
@@ -708,15 +626,12 @@ internal fun TvModernHomeRows(
                             }
                             if (target.menuReturn && focused) onContentFocused()
                             if (target.fastLanding) fastVerticalScrolling = false
-                            pendingVerticalRowIndex = -1
                             verticalFocusTarget = null
                         }
                     },
                     onContentFocused = onContentFocused,
                     onLeftAtRowStart = onLeftAtRowStart,
                     onFocused = { focusedRow, index, entry ->
-                        // One focus coordinator owns vertical moves; a left/right
-                        // card focus must not start another row alignment job.
                         onFocused(focusedRow, index, entry)
                     },
                     onOpen = { entry ->
@@ -756,6 +671,8 @@ internal fun TvModernHomeRows(
 private fun TvModernHomeRow(
     row: TvHomeRow,
     rowVisible: Boolean,
+    defaultBringIntoViewSpec: BringIntoViewSpec,
+    prefetchFirstCard: Boolean,
     rowsLayout: HomeRowsLayout,
     rowState: LazyListState,
     rowFocusRequester: FocusRequester,
@@ -770,8 +687,7 @@ private fun TvModernHomeRow(
     onOpen: (TvHomeEntry) -> Unit,
     onPosterLongClick: (TvHomeEntry) -> Unit,
 ) {
-    val savedIndex = (TvHomeFocusMemory.focusedIndexByRow[row.key] ?: 0)
-        .coerceIn(0, row.entries.lastIndex)
+    val savedIndex = row.savedFocusIndex()
     var focusedIndex by remember(row.key) { mutableIntStateOf(savedIndex) }
     // Persist the actual viewport index + pixel offset, NOT the focused card.
     DisposableEffect(row.key, rowState) {
@@ -802,7 +718,6 @@ private fun TvModernHomeRow(
     // restore the row position before asking Compose to focus that poster.
     // This row already has external left padding, so the local anchor is 0
     // (or focusPaintInset for scaled Continue Watching cards).
-    val defaultBringIntoViewSpec = LocalBringIntoViewSpec.current
     val horizontalBringIntoViewSpec = remember(density, defaultBringIntoViewSpec, focusPaintInset) {
         val anchorPx = with(density) { focusPaintInset.toPx() }
         @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
@@ -841,6 +756,32 @@ private fun TvModernHomeRow(
                     anchorPx
                 }
                 return offset - target
+            }
+        }
+    }
+
+    val context = LocalContext.current.applicationContext
+    LaunchedEffect(rowVisible, active, rowState, row.entries, rowsLayout.portraitCards, density) {
+        if (!rowVisible || !active) return@LaunchedEffect
+        val portrait = rowsLayout.portraitCards
+        val size = with(density) {
+            IntSize(
+                (if (portrait) PosterWidth else row.kind.cardWidth).roundToPx(),
+                (if (portrait) MODERN_HOME_POSTER_HEIGHT else row.kind.cardHeight).roundToPx(),
+            )
+        }
+        snapshotFlow {
+            if (rowState.isScrollInProgress) null else rowState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
+        }.collectLatest { lastVisible ->
+            if (lastVisible == null) return@collectLatest
+            delay(150L)
+            for (index in (lastVisible + 1)..(lastVisible + 2)) {
+                val entry = row.entries.getOrNull(index) ?: continue
+                if (entry is TvHomeEntry.SeeAll) continue
+                val media = entry.media
+                val landscape = !portrait && row.kind == TvHomeRowKind.CONTINUE_WATCHING
+                val url = if (landscape) media.background ?: media.poster else media.poster ?: media.background
+                tvPrefetchImage(context, url, size)
             }
         }
     }
@@ -1014,8 +955,7 @@ private fun TvModernHomeRow(
                         .focusRestorer {
                             // Match Nuvio: restore the last focused card in this
                             // row, not an arbitrary first visible item.
-                            val saved = (TvHomeFocusMemory.focusedIndexByRow[row.key] ?: focusedIndex)
-                                .coerceIn(0, row.entries.lastIndex)
+                            val saved = row.savedFocusIndex(focusedIndex)
                             itemFocusRequesters[saved]
                                 ?: itemFocusRequesters[0]
                                 ?: FocusRequester.Default
@@ -1049,7 +989,9 @@ private fun TvModernHomeRow(
                             }
                         }
                         val imageActivated = remember(entry.key) { booleanArrayOf(false) }
-                        if (rowVisible && cardVisible) imageActivated[0] = true
+                        if ((rowVisible && cardVisible) || (index == 0 && prefetchFirstCard)) {
+                            imageActivated[0] = true
+                        }
                         TvModernHomeCard(
                             loadImage = imageActivated[0],
                             portraitCards = rowsLayout.portraitCards,
@@ -1074,6 +1016,7 @@ private fun TvModernHomeRow(
                                     focusedIndex = index
                                     TvHomeFocusMemory.activeRowKey = row.key
                                     TvHomeFocusMemory.focusedIndexByRow[row.key] = index
+                                    TvHomeFocusMemory.focusedKeyByRow[row.key] = entry.key
                                     onContentFocused()
                                     onFocused(row, index, entry)
                                 }

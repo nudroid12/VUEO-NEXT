@@ -169,6 +169,20 @@ fun TvHomeScreen(
             retainedState.catalogRows.ifEmpty { runtime.cachedHomeRows() },
         )
         if (explicitRetry || retainedState.loadedRefreshToken != refreshToken || runtime.needsHomeRefresh()) {
+            // Keep the first displayed order during automatic cache hydration.
+            // The runtime still saves the fresh order for the next Home session.
+            val displayedById = retainedState.catalogRows.associateBy { it.id }.toMutableMap()
+            fun publishCatalogRows(incoming: List<CatalogRow>) {
+                val displayed = runtime.visibleHomeRows(incoming).map { fresh ->
+                    val previous = displayedById[fresh.id]
+                    val merged = if (explicitRetry || previous == null) fresh
+                        else mergeVisibleCatalogRefresh(previous, fresh)
+                    displayedById[fresh.id] = merged
+                    merged
+                }
+                retainedState.catalogRows = displayed
+            }
+
             retainedState.loading = retainedState.catalogRows.isEmpty()
             retainedState.error = null
 
@@ -177,7 +191,7 @@ fun TvHomeScreen(
                     val updates = Channel<List<CatalogRow>>(Channel.CONFLATED)
                     val publisher = launch {
                         for (partialRows in updates) {
-                            retainedState.catalogRows = runtime.visibleHomeRows(partialRows)
+                            publishCatalogRows(partialRows)
                             retainedState.loading = false
                         }
                     }
@@ -195,7 +209,7 @@ fun TvHomeScreen(
                 }
             }
                 .onSuccess { rows ->
-                    retainedState.catalogRows = runtime.visibleHomeRows(rows)
+                    publishCatalogRows(rows)
                 }
                 .onFailure { failure ->
                     if (failure is CancellationException) throw failure
@@ -629,3 +643,23 @@ private fun buildTvHomeRows(
             }
         }
     }
+
+private fun mergeVisibleCatalogRefresh(previous: CatalogRow, fresh: CatalogRow): CatalogRow {
+    if (previous.items.isEmpty()) return fresh
+    val previousKeys = previous.items.map { it.type to it.id }
+    val freshKeys = fresh.items.map { it.type to it.id }
+    if (freshKeys.size >= previousKeys.size && freshKeys.take(previousKeys.size) == previousKeys) {
+        return fresh
+    }
+    if (freshKeys == previousKeys.take(freshKeys.size)) {
+        return fresh.copy(items = fresh.items + previous.items.drop(freshKeys.size))
+    }
+
+    val existing = previousKeys.toHashSet()
+    val additions = freshKeys.takeWhile { it !in existing }.size
+    val overlap = freshKeys.drop(additions)
+    if (additions > 0 && overlap.isNotEmpty() && overlap == previousKeys.take(overlap.size)) {
+        return fresh.copy(items = fresh.items.take(additions) + previous.items)
+    }
+    return previous
+}
