@@ -292,8 +292,14 @@ internal fun TvHomePresentation(
             rows.isNotEmpty() -> {
                 TvModernHomeRows(
                     rows = rows,
-                    rowsViewportHeight = if (catalogOnly) (screenHeight - catalogHeaderHeight).coerceAtLeast(1.dp) else rowsViewportHeight,
-                    catalogOnly = catalogOnly,
+                    rowsLayout = HomeRowsLayout(
+                        viewportHeight = if (catalogOnly) {
+                            (screenHeight - catalogHeaderHeight).coerceAtLeast(1.dp)
+                        } else rowsViewportHeight,
+                        bottomPadding = if (catalogOnly) 24.dp else rowsViewportHeight,
+                        startPadding = if (catalogOnly) 28.dp else contentStartPadding,
+                        portraitCards = catalogOnly,
+                    ),
                     contentFocusRequester = contentFocusRequester,
                     focusResetToken = focusResetToken,
                     contentReturnToken = contentReturnToken,

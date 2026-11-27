@@ -78,7 +78,6 @@ import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
 import com.vueo.tv.ui.tvPosterActivation
-import com.vueo.tv.ui.tvSidebarContentStartPadding
 import com.vueo.tv.ui.tvSidebarIsPillMode
 import com.vueo.tv.ui.motion.TvMotion
 import kotlinx.coroutines.Job
@@ -114,9 +113,19 @@ private fun TvHomeRowKind.focusPaintInset(): Dp =
     if (this == TvHomeRowKind.CONTINUE_WATCHING) 4.dp else 0.dp
 
 /** Height of a complete row including its title, gap and focus paint space. */
-internal fun TvHomeRowKind.homeRowContentHeight(density: Density): Dp =
-    cardHeight + RowTitleSpacing + with(density) { RowTitleLineHeight.toDp() } +
+internal fun TvHomeRowKind.homeRowContentHeight(
+    density: Density,
+    portraitCards: Boolean = false,
+): Dp =
+    (if (portraitCards) MODERN_HOME_POSTER_HEIGHT else cardHeight) + RowTitleSpacing + with(density) { RowTitleLineHeight.toDp() } +
         focusPaintInset() * 2f
+
+internal data class HomeRowsLayout(
+    val viewportHeight: Dp,
+    val bottomPadding: Dp,
+    val startPadding: Dp,
+    val portraitCards: Boolean,
+)
 
 private data class HomeVerticalFocusTarget(
     val rowKey: String,
@@ -135,8 +144,7 @@ private data class HomeVerticalFocusTarget(
 @Composable
 internal fun TvModernHomeRows(
     rows: List<TvHomeRow>,
-    rowsViewportHeight: Dp,
-    catalogOnly: Boolean,
+    rowsLayout: HomeRowsLayout,
     contentFocusRequester: FocusRequester,
     focusResetToken: Int,
     contentReturnToken: Int,
@@ -229,10 +237,10 @@ internal fun TvModernHomeRows(
         traceHome { "HOME_ROUTE_FOCUS_TARGET row=${row.key} card=$cardIndex preserveViewport=$sameOrder" }
     }
 
-    var previousCatalogOnly by remember { mutableStateOf(catalogOnly) }
-    LaunchedEffect(catalogOnly) {
-        if (previousCatalogOnly == catalogOnly) return@LaunchedEffect
-        previousCatalogOnly = catalogOnly
+    var previousPortraitLayout by remember { mutableStateOf(rowsLayout.portraitCards) }
+    LaunchedEffect(rowsLayout.portraitCards) {
+        if (previousPortraitLayout == rowsLayout.portraitCards) return@LaunchedEffect
+        previousPortraitLayout = rowsLayout.portraitCards
         if (!active || routeReturnPending || navigationOwnsFocus || rows.isEmpty()) return@LaunchedEffect
         val rowIndex = rows.indexOfFirst { it.key == TvHomeFocusMemory.activeRowKey }
             .takeIf { it >= 0 } ?: rows.indexOfFirst { it.key.startsWith("catalog:") }.coerceAtLeast(0)
@@ -292,26 +300,38 @@ internal fun TvModernHomeRows(
             .collect { currentMotionCallback(it) }
     }
 
-    suspend fun revealCatalogRow(index: Int, row: TvHomeRow, movingDown: Boolean) {
+    // A trailing viewport of padding lets the hero layout align even the last
+    // row at the top. A tighter viewport reveals rows within the available space.
+    val alignRowsToTop = rowsLayout.bottomPadding >= rowsLayout.viewportHeight
+
+    suspend fun revealRow(index: Int, row: TvHomeRow, movingDown: Boolean, animated: Boolean) {
         val layout = verticalState.layoutInfo
-        if (layout.visibleItemsInfo.none { it.key == row.key }) {
+        val item = layout.visibleItemsInfo.firstOrNull { it.key == row.key }
+        if (alignRowsToTop || item == null) {
             val viewportHeight = layout.viewportEndOffset - layout.viewportStartOffset
-            val rowHeight = with(density) { TvHomeRowKind.POSTERS.homeRowContentHeight(this).roundToPx() }
-            val offset = if (movingDown) (viewportHeight - rowHeight).coerceAtLeast(0) else 0
-            verticalState.animateScrollToItem(index, -offset)
+            val rowHeight = with(density) {
+                row.kind.homeRowContentHeight(this, rowsLayout.portraitCards).roundToPx()
+            }
+            val offset = if (!alignRowsToTop && movingDown) (viewportHeight - rowHeight).coerceAtLeast(0) else 0
+            if (animated) verticalState.animateScrollToItem(index, -offset)
+            else verticalState.scrollToItem(index, -offset)
+            if (alignRowsToTop) return
         }
 
         val updated = verticalState.layoutInfo
-        val item = updated.visibleItemsInfo.firstOrNull { it.key == row.key } ?: return
-        val top = item.offset - updated.viewportStartOffset
-        val bottom = item.offset + item.size - updated.viewportEndOffset
+        val visible = updated.visibleItemsInfo.firstOrNull { it.key == row.key } ?: return
+        val top = visible.offset - updated.viewportStartOffset
+        val bottom = visible.offset + visible.size - updated.viewportEndOffset
         val distance = when {
-            item.size > updated.viewportEndOffset - updated.viewportStartOffset -> top
+            visible.size > updated.viewportEndOffset - updated.viewportStartOffset -> top
             top < 0 -> top
             bottom > 0 -> bottom
             else -> 0
         }
-        if (distance != 0) verticalState.animateScrollBy(distance.toFloat())
+        if (distance != 0) {
+            if (animated) verticalState.animateScrollBy(distance.toFloat())
+            else verticalState.scroll { scrollBy(distance.toFloat()) }
+        }
     }
 
     fun cardForVerticalEntry(row: TvHomeRow): Int =
@@ -338,11 +358,7 @@ internal fun TvModernHomeRows(
         verticalFocusJob[0] = verticalScope.launch {
             // Final snap does not animate through intermediary rows. Only
             // the selected destination gets focus when D-pad is released.
-            if (catalogOnly) {
-                revealCatalogRow(rowIndex, targetRow, rowIndex >= verticalState.firstVisibleItemIndex)
-            } else if (verticalState.firstVisibleItemIndex != rowIndex ||
-                verticalState.firstVisibleItemScrollOffset != 0
-            ) verticalState.scrollToItem(rowIndex, 0)
+            revealRow(rowIndex, targetRow, rowIndex >= verticalState.firstVisibleItemIndex, animated = !alignRowsToTop)
             withFrameNanos { }
             if (currentNavigationVisible) {
                 fastVerticalScrolling = false
@@ -409,8 +425,7 @@ internal fun TvModernHomeRows(
                     "repeat=$repeatCount pendingIndex=$requestedIndex"
             }
             verticalFocusJob[0] = verticalScope.launch {
-                if (catalogOnly) revealCatalogRow(requestedIndex, targetRow, delta > 0)
-                else verticalState.scrollToItem(requestedIndex, 0)
+                revealRow(requestedIndex, targetRow, delta > 0, animated = !alignRowsToTop)
             }
             return true
         }
@@ -435,25 +450,24 @@ internal fun TvModernHomeRows(
                     }
                 }
             }
-            val changesRowHeight = availableRows[actualIndex].kind.homeRowContentHeight(density) !=
-                targetRow.kind.homeRowContentHeight(density)
-            val catalogRowVisible = catalogOnly && verticalState.layoutInfo.visibleItemsInfo.any {
+            val fromHeight = availableRows[actualIndex].kind.homeRowContentHeight(density, rowsLayout.portraitCards)
+            val toHeight = targetRow.kind.homeRowContentHeight(density, rowsLayout.portraitCards)
+            val moveViewport = !onScreen || fromHeight != toHeight
+            val focusBeforeScroll = !alignRowsToTop && verticalState.layoutInfo.visibleItemsInfo.any {
                 it.key == targetRow.key && it.offset < verticalState.layoutInfo.viewportEndOffset &&
                     it.offset + it.size > verticalState.layoutInfo.viewportStartOffset
             }
-            if (catalogOnly && !catalogRowVisible) {
-                revealCatalogRow(requestedIndex, targetRow, delta > 0)
-            } else if (!catalogOnly && (!onScreen || changesRowHeight)) {
-                verticalState.animateScrollToItem(requestedIndex, 0)
+            if (moveViewport && !focusBeforeScroll) {
+                revealRow(requestedIndex, targetRow, delta > 0, animated = true)
             }
-            if (!catalogRowVisible) withFrameNanos { }
+            if (!focusBeforeScroll) withFrameNanos { }
             if (currentNavigationVisible) return@launch
             verticalFocusToken++
             verticalFocusTarget = HomeVerticalFocusTarget(
                 rowKey = targetRow.key, cardIndex = selectedCard, token = verticalFocusToken,
             )
-            if (catalogRowVisible && !onScreen) {
-                revealCatalogRow(requestedIndex, targetRow, delta > 0)
+            if (moveViewport && focusBeforeScroll) {
+                revealRow(requestedIndex, targetRow, delta > 0, animated = true)
             }
             traceHome {
                 "HOME_SCROLL_FINISH axis=vertical cause=dpad target=${targetRow.key} " +
@@ -611,7 +625,7 @@ internal fun TvModernHomeRows(
             state = verticalState,
             modifier = modifier
                 .fillMaxWidth()
-                .height(rowsViewportHeight)
+                .height(rowsLayout.viewportHeight)
                 .onPreviewKeyEvent { event ->
                     when (event.key) {
                         Key.DirectionUp, Key.DirectionDown -> {
@@ -635,7 +649,7 @@ internal fun TvModernHomeRows(
                 .onFocusChanged { state ->
                     if (state.hasFocus && !currentNavigationVisible) onContentFocused()
                 },
-            contentPadding = PaddingValues(bottom = if (catalogOnly) 24.dp else rowsViewportHeight),
+            contentPadding = PaddingValues(bottom = rowsLayout.bottomPadding),
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             itemsIndexed(
@@ -664,7 +678,7 @@ internal fun TvModernHomeRows(
                 }
                 TvModernHomeRow(
                     rowVisible = rowVisible,
-                    catalogOnly = catalogOnly,
+                    rowsLayout = rowsLayout,
                     row = row,
                     rowState = rowState,
                     rowFocusRequester = rowFocusRequesters.getOrPut(row.key) { FocusRequester() },
@@ -742,7 +756,7 @@ internal fun TvModernHomeRows(
 private fun TvModernHomeRow(
     row: TvHomeRow,
     rowVisible: Boolean,
-    catalogOnly: Boolean,
+    rowsLayout: HomeRowsLayout,
     rowState: LazyListState,
     rowFocusRequester: FocusRequester,
     contentFocusEnabled: Boolean,
@@ -779,7 +793,7 @@ private fun TvModernHomeRow(
     var preserveVerticalEntryViewport by verticalEntryViewportState
 
     val density = LocalDensity.current
-    val rowHorizontalPadding = if (catalogOnly) 28.dp else tvSidebarContentStartPadding(MODERN_HOME_CONTENT_START_PADDING)
+    val rowHorizontalPadding = rowsLayout.startPadding
     // Reserve paint space for the 1.022x focus scale without moving the cards.
     val focusPaintInset = row.kind.focusPaintInset()
 
@@ -1038,7 +1052,7 @@ private fun TvModernHomeRow(
                         if (rowVisible && cardVisible) imageActivated[0] = true
                         TvModernHomeCard(
                             loadImage = imageActivated[0],
-                            catalogOnly = catalogOnly,
+                            portraitCards = rowsLayout.portraitCards,
                             entry = entry,
                             kind = row.kind,
                             requester = itemRequester,
@@ -1079,7 +1093,7 @@ private fun TvModernHomeRow(
 private fun TvModernHomeCard(
     entry: TvHomeEntry,
     loadImage: Boolean,
-    catalogOnly: Boolean,
+    portraitCards: Boolean,
     kind: TvHomeRowKind,
     requester: FocusRequester,
     contentFocusEnabled: Boolean,
@@ -1100,9 +1114,9 @@ private fun TvModernHomeCard(
         label = "modernHomeCardScale",
     )
 
-    val width = if (catalogOnly) PosterWidth else kind.cardWidth
-    val height = if (catalogOnly) MODERN_HOME_POSTER_HEIGHT else kind.cardHeight
-    val shape = if (!catalogOnly && (kind == TvHomeRowKind.CONTINUE_WATCHING || kind == TvHomeRowKind.COLLECTIONS)) ContinueShape else PosterShape
+    val width = if (portraitCards) PosterWidth else kind.cardWidth
+    val height = if (portraitCards) MODERN_HOME_POSTER_HEIGHT else kind.cardHeight
+    val shape = if (!portraitCards && (kind == TvHomeRowKind.CONTINUE_WATCHING || kind == TvHomeRowKind.COLLECTIONS)) ContinueShape else PosterShape
 
     Box(
         modifier = Modifier
@@ -1148,7 +1162,7 @@ private fun TvModernHomeCard(
             Text("See All", color = TvDesign.White, fontSize = 17.sp,
                 fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.Center))
         } else when (kind) {
-            TvHomeRowKind.CONTINUE_WATCHING -> ContinueWatchingCardContent(entry, loadImage || focused, focused, portrait = catalogOnly)
+            TvHomeRowKind.CONTINUE_WATCHING -> ContinueWatchingCardContent(entry, loadImage || focused, focused, portrait = portraitCards)
             TvHomeRowKind.COLLECTIONS -> {
                 TvNetworkImage(url = entry.media.poster, contentDescription = entry.media.name,
                     modifier = Modifier.fillMaxSize(), loadEnabled = loadImage || focused)
