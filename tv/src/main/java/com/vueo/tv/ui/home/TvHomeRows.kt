@@ -15,7 +15,6 @@ import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -23,6 +22,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -72,6 +72,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -967,7 +968,7 @@ private fun TvModernHomeRow(
         }
 
         CompositionLocalProvider(LocalBringIntoViewSpec provides horizontalBringIntoViewSpec) {
-            BoxWithConstraints(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(start = rowHorizontalPadding - focusPaintInset)
@@ -999,7 +1000,7 @@ private fun TvModernHomeRow(
                     contentPadding = PaddingValues(
                         start = focusPaintInset,
                         top = focusPaintInset,
-                        end = if (catalogOnly) (maxWidth - PosterWidth).coerceAtLeast(0.dp) else 32.dp.coerceAtLeast(focusPaintInset),
+                        end = 32.dp.coerceAtLeast(focusPaintInset),
                         bottom = focusPaintInset,
                     ),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -1061,6 +1062,16 @@ private fun TvModernHomeRow(
                 if (catalogOnly && rowHasFocus && active && contentFocusEnabled) {
                     Box(
                         Modifier.align(Alignment.TopStart)
+                            .offset {
+                                // At the scroll limit, the remaining posters keep their
+                                // positions and the focus frame follows the selected card.
+                                val left = if (rowState.canScrollForward) 0 else {
+                                    rowState.layoutInfo.visibleItemsInfo
+                                        .firstOrNull { it.index == focusedIndex }
+                                        ?.offset?.coerceAtLeast(0) ?: 0
+                                }
+                                IntOffset(left, 0)
+                            }
                             .width(PosterWidth)
                             .height(MODERN_HOME_POSTER_HEIGHT)
                             .border(2.dp, TvDesign.Accent, PosterShape),
