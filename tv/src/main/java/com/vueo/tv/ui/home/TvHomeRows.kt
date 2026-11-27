@@ -188,6 +188,7 @@ internal fun TvModernHomeRows(
     var lastHorizontalKey by remember { mutableStateOf<Key?>(null) }
     val currentMotionCallback by rememberUpdatedState(onVerticalMotionChanged)
     val currentRows by rememberUpdatedState(rows)
+    val routeReturnPendingState = rememberUpdatedState(routeReturnPending)
     val currentNavigationVisible by rememberUpdatedState(navigationVisible)
     var appliedFocusResetToken by remember { mutableIntStateOf(0) }
     var appliedContentReturnToken by remember { mutableIntStateOf(0) }
@@ -211,11 +212,13 @@ internal fun TvModernHomeRows(
             .takeIf { it >= 0 } ?: (if (row.key == anchor.rowKey) anchor.cardIndex else 0)
                 .coerceIn(0, row.entries.lastIndex)
         val sameRow = row.key == anchor.rowKey
-        val sameOrder = sameRow && (!row.isDynamicEpisodeRail() ||
-            anchor.rowCardKeys == row.entries.map { it.key })
+        val savedCardPresent = sameRow && row.entries[cardIndex].key == anchor.cardKey
         val targetRowIndex = currentRows.indexOf(row)
         val rowShift = if (anchor.capturedRowIndex >= 0) targetRowIndex - anchor.capturedRowIndex else 0
-        val verticalIndex = if (sameRow) (anchor.verticalIndex + rowShift).coerceIn(0, currentRows.lastIndex) else targetRowIndex
+        val firstRowIndex = currentRows.indexOfFirst { it.key == anchor.verticalFirstRowKey }
+        val verticalIndex = if (sameRow && firstRowIndex in 0..targetRowIndex) firstRowIndex
+            else if (sameRow) (anchor.verticalIndex + rowShift).coerceIn(0, targetRowIndex)
+            else targetRowIndex
         val verticalOffset = if (sameRow) anchor.verticalOffset else 0
         // This also owns initial focus when Home was recreated after Sources.
         // Do not let the later menu effect replay an initial reset over this return.
@@ -227,14 +230,21 @@ internal fun TvModernHomeRows(
         ) {
             verticalState.scrollToItem(verticalIndex, verticalOffset)
         }
+        if (verticalState.layoutInfo.visibleItemsInfo.none {
+                it.key == row.key && it.offset < verticalState.layoutInfo.viewportEndOffset &&
+                    it.offset + it.size > verticalState.layoutInfo.viewportStartOffset
+            }
+        ) {
+            verticalState.scrollToItem(targetRowIndex)
+        }
         verticalFocusToken += 1
         verticalFocusTarget = HomeVerticalFocusTarget(
             rowKey = row.key, cardIndex = cardIndex, token = verticalFocusToken,
-            routeReturn = true, restorePosition = anchor.horizontal.takeIf { sameOrder },
-            cardKey = row.entries[cardIndex].key.takeIf { row.isDynamicEpisodeRail() },
-            restoreFirstCardKey = anchor.horizontalFirstCardKey.takeIf { sameOrder && row.isDynamicEpisodeRail() },
+            routeReturn = true, restorePosition = anchor.horizontal.takeIf { savedCardPresent },
+            cardKey = row.entries[cardIndex].key,
+            restoreFirstCardKey = anchor.horizontalFirstCardKey.takeIf { savedCardPresent },
         )
-        traceHome { "HOME_ROUTE_FOCUS_TARGET row=${row.key} card=$cardIndex preserveViewport=$sameOrder" }
+        traceHome { "HOME_ROUTE_FOCUS_TARGET row=${row.key} card=$cardIndex preserveViewport=$savedCardPresent" }
     }
 
     var previousPortraitLayout by remember { mutableStateOf(rowsLayout.portraitCards) }
@@ -309,6 +319,36 @@ internal fun TvModernHomeRows(
         snapshotFlow { verticalState.isScrollInProgress || fastVerticalScrolling }
             .distinctUntilChanged()
             .collect { currentMotionCallback(it) }
+    }
+
+    val context = LocalContext.current.applicationContext
+    LaunchedEffect(active, rowsLayout.portraitCards, verticalState, density) {
+        if (!active) return@LaunchedEffect
+        val portrait = rowsLayout.portraitCards
+        snapshotFlow {
+            if (fastVerticalScrolling || verticalState.isScrollInProgress || routeReturnPendingState.value) {
+                emptyList()
+            } else {
+                val layout = verticalState.layoutInfo
+                val last = layout.visibleItemsInfo.lastOrNull { it.offset < layout.viewportEndOffset }?.index
+                if (last == null) emptyList() else currentRows.drop(last + 1).take(2)
+            }
+        }.collectLatest { upcomingRows ->
+            if (upcomingRows.isEmpty()) return@collectLatest
+            delay(150L)
+            for (row in upcomingRows) {
+                val media = row.entries.firstOrNull()?.media ?: continue
+                val landscape = !portrait && row.kind == TvHomeRowKind.CONTINUE_WATCHING
+                val url = if (landscape) media.background ?: media.poster else media.poster ?: media.background
+                val size = with(density) {
+                    IntSize(
+                        (if (portrait) PosterWidth else row.kind.cardWidth).roundToPx(),
+                        (if (portrait) MODERN_HOME_POSTER_HEIGHT else row.kind.cardHeight).roundToPx(),
+                    )
+                }
+                tvPrefetchImage(context, url, size)
+            }
+        }
     }
 
     fun finishFastVerticalScroll() {
@@ -575,13 +615,6 @@ internal fun TvModernHomeRows(
                         }
                     }
                 }
-                val rowImmediatelyAhead by remember(verticalState, rowIndex) {
-                    derivedStateOf {
-                        val layout = verticalState.layoutInfo
-                        val last = layout.visibleItemsInfo.lastOrNull { it.offset < layout.viewportEndOffset }
-                        last != null && rowIndex == last.index + 1
-                    }
-                }
                 val rowState = remember(row.key) {
                     rowListStates.getOrPut(row.key) {
                         val position = TvHomeFocusMemory.horizontalPositionByRow[row.key]
@@ -596,7 +629,6 @@ internal fun TvModernHomeRows(
                 TvModernHomeRow(
                     rowVisible = rowVisible,
                     defaultBringIntoViewSpec = defaultBringIntoViewSpec,
-                    prefetchFirstCard = !fastVerticalScrolling && rowImmediatelyAhead,
                     rowsLayout = rowsLayout,
                     row = row,
                     rowState = rowState,
@@ -642,10 +674,9 @@ internal fun TvModernHomeRows(
                             row.key, entry.key, cardIndex,
                             TvHomeHorizontalPosition(rowState.firstVisibleItemIndex, rowState.firstVisibleItemScrollOffset),
                             verticalState.firstVisibleItemIndex, verticalState.firstVisibleItemScrollOffset,
-                            horizontalFirstCardKey = row.entries.getOrNull(rowState.firstVisibleItemIndex)?.key
-                                .takeIf { row.isDynamicEpisodeRail() },
-                            rowCardKeys = row.entries.map { it.key },
+                            horizontalFirstCardKey = row.entries.getOrNull(rowState.firstVisibleItemIndex)?.key,
                             capturedRowIndex = rowIndex,
+                            verticalFirstRowKey = currentRows.getOrNull(verticalState.firstVisibleItemIndex)?.key,
                         ))
                         onOpen(entry)
                     },
@@ -656,8 +687,8 @@ internal fun TvModernHomeRows(
                                 TvHomeHorizontalPosition(rowState.firstVisibleItemIndex, rowState.firstVisibleItemScrollOffset),
                                 verticalState.firstVisibleItemIndex, verticalState.firstVisibleItemScrollOffset,
                                 horizontalFirstCardKey = row.entries.getOrNull(rowState.firstVisibleItemIndex)?.key,
-                                rowCardKeys = row.entries.map { it.key },
                                 capturedRowIndex = rowIndex,
+                                verticalFirstRowKey = currentRows.getOrNull(verticalState.firstVisibleItemIndex)?.key,
                             ))
                         }
                         onPosterLongClick(entry)
@@ -674,7 +705,6 @@ private fun TvModernHomeRow(
     row: TvHomeRow,
     rowVisible: Boolean,
     defaultBringIntoViewSpec: BringIntoViewSpec,
-    prefetchFirstCard: Boolean,
     rowsLayout: HomeRowsLayout,
     rowState: LazyListState,
     rowFocusRequester: FocusRequester,
@@ -702,7 +732,7 @@ private fun TvModernHomeRow(
     }
     val itemFocusRequesters = remember(row.key) { mutableMapOf<Int, FocusRequester>() }
     val cwFocusRequesters = remember(row.key) { mutableMapOf<String, FocusRequester>() }
-    var focusedCwKey by remember(row.key) { mutableStateOf<String?>(null) }
+    var focusedCardKey by remember(row.key) { mutableStateOf<String?>(null) }
     val currentRow by rememberUpdatedState(row)
     val currentContentFocusEnabled by rememberUpdatedState(contentFocusEnabled)
     val currentActive by rememberUpdatedState(active)
@@ -815,10 +845,10 @@ private fun TvModernHomeRow(
         }
     }
 
-    // Dynamic episode rails follow live title identity; ordinary DPAD restores retain their policy.
-    val cwReturnKeys = if(row.isDynamicEpisodeRail() && verticalFocusTarget?.routeReturn == true)
+    // A returning card follows its identity when a row changes during restoration.
+    val returnKeys = if(verticalFocusTarget?.routeReturn == true)
         row.entries.map { it.key } else null
-    LaunchedEffect(verticalFocusTarget?.token, contentFocusEnabled, active, cwReturnKeys) {
+    LaunchedEffect(verticalFocusTarget?.token, contentFocusEnabled, active, returnKeys) {
         val target = verticalFocusTarget ?: return@LaunchedEffect
         if (!active || !contentFocusEnabled || target.rowKey != row.key || row.entries.isEmpty()) return@LaunchedEffect
         fun resolveTargetIndex(): Int? {
@@ -846,8 +876,11 @@ private fun TvModernHomeRow(
             entries.indexOfFirst { it.key == key }.takeIf { it >= 0 }
         } ?: target.restorePosition?.firstVisibleItemIndex
             ?.coerceIn(0, entries.lastIndex) ?: targetIndex
-        val restoreOffset = target.restorePosition?.firstVisibleItemScrollOffset ?: 0
-        val alreadyAnchored = rowState.firstVisibleItemIndex == restoreIndex &&
+        val savedStartMissing = target.restoreFirstCardKey != null &&
+            entries.none { it.key == target.restoreFirstCardKey }
+        val viewportIndex = if (savedStartMissing) targetIndex else restoreIndex
+        val restoreOffset = if (savedStartMissing) 0 else target.restorePosition?.firstVisibleItemScrollOffset ?: 0
+        val alreadyAnchored = rowState.firstVisibleItemIndex == viewportIndex &&
             rowState.firstVisibleItemScrollOffset == restoreOffset
         if (!alreadyAnchored && (target.routeReturn || visibleTarget == null)) {
             traceHome {
@@ -855,7 +888,7 @@ private fun TvModernHomeRow(
                     "targetCard=$targetIndex from=${rowState.firstVisibleItemIndex}:${rowState.firstVisibleItemScrollOffset}"
             }
             if (target.routeReturn) {
-                rowState.scrollToItem(restoreIndex, restoreOffset)
+                rowState.scrollToItem(viewportIndex, restoreOffset)
             } else {
                 val layout = rowState.layoutInfo
                 val lastVisible = layout.visibleItemsInfo.lastOrNull()
@@ -879,7 +912,8 @@ private fun TvModernHomeRow(
                 withFrameNanos { }
                 return@repeat
             }
-            val requester = if(liveKey != null) cwFocusRequesters[liveKey] else itemFocusRequesters[liveIndex]
+            val requester = if (liveKey != null && row.isDynamicEpisodeRail())
+                cwFocusRequesters[liveKey] else itemFocusRequesters[liveIndex]
             val focused = requester?.let { runCatching { it.requestFocus() }.getOrDefault(false) } == true
             if (focused) {
                 traceHome {
@@ -890,7 +924,7 @@ private fun TvModernHomeRow(
                     // Let focus-triggered bring-into-view settle while still suppressed.
                     repeat(2) { withFrameNanos { } }
                 }
-                if(liveKey != null && (currentRow.entries.getOrNull(resolveTargetIndex() ?: -1)?.key != liveKey || focusedCwKey != liveKey)) {
+                if(liveKey != null && (currentRow.entries.getOrNull(resolveTargetIndex() ?: -1)?.key != liveKey || focusedCardKey != liveKey)) {
                     withFrameNanos { }
                     return@repeat
                 }
@@ -996,7 +1030,7 @@ private fun TvModernHomeRow(
                             }
                         }
                         val imageActivated = remember(entry.key) { booleanArrayOf(false) }
-                        if ((rowVisible && cardVisible) || (index == 0 && prefetchFirstCard)) {
+                        if (rowVisible && cardVisible) {
                             imageActivated[0] = true
                         }
                         TvModernHomeCard(
@@ -1008,7 +1042,7 @@ private fun TvModernHomeRow(
                             contentFocusEnabled = contentFocusEnabled,
                             onLeftAtStart = onLeftAtRowStart.takeIf { index == 0 },
                             onFocused = {
-                                if(row.isDynamicEpisodeRail()) focusedCwKey = entry.key
+                                focusedCardKey = entry.key
                                 val returningToThisCard = verticalFocusTarget?.let {
                                     it.routeReturn && (if(it.cardKey != null) it.cardKey == entry.key else it.cardIndex == index)
                                 } == true

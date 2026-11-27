@@ -85,9 +85,9 @@ internal data class HomeRouteFocusAnchor(
     val verticalIndex: Int,
     val verticalOffset: Int,
     val horizontalFirstCardKey: String? = null,
-    val rowCardKeys: List<String> = emptyList(),
     val restoreReady: Boolean = true,
     val capturedRowIndex: Int = -1,
+    val verticalFirstRowKey: String? = null,
 )
 
 internal object TvHomeFocusMemory {
@@ -166,3 +166,6 @@ internal fun TvHomeRow.savedFocusIndex(fallback: Int = 0): Int {
     if (entries.getOrNull(savedIndex)?.key == savedKey) return savedIndex
     return entries.indexOfFirst { it.key == savedKey }.takeIf { it >= 0 } ?: savedIndex
 }
+
+internal fun catalogCardKey(rowKey: String, media: MediaItem): String =
+    "$rowKey:${media.type}:${media.id}"

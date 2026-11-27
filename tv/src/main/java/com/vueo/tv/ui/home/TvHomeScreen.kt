@@ -67,6 +67,8 @@ class TvHomeRetainedState internal constructor(runtime: TvRuntime) {
 
     internal var catalogPagination by mutableStateOf(TvHomeCatalogPagination())
 
+    internal val deferredCatalogRows = mutableMapOf<String, CatalogRow>()
+
     internal var loadedRefreshToken = Int.MIN_VALUE
     internal var libraryHydrationRefreshToken = Int.MIN_VALUE
     internal var libraryHydrationRevision = Int.MIN_VALUE
@@ -172,18 +174,28 @@ fun TvHomeScreen(
             retainedState.catalogRows.ifEmpty { runtime.cachedHomeRows() },
         )
         if (explicitRetry || retainedState.loadedRefreshToken != refreshToken || runtime.needsHomeRefresh()) {
-            // Keep the first displayed order during automatic cache hydration.
-            // The runtime still saves the fresh order for the next Home session.
-            val displayedById = retainedState.catalogRows.associateBy { it.id }.toMutableMap()
+            if (explicitRetry) retainedState.deferredCatalogRows.clear()
             fun publishCatalogRows(incoming: List<CatalogRow>) {
-                val displayed = runtime.visibleHomeRows(incoming).map { fresh ->
+                val displayedById = retainedState.catalogRows.associateBy { it.id }
+                val protectedKey = retainedState.routeFocusAnchor?.rowKey ?: TvHomeFocusMemory.activeRowKey
+                val pagedSources = homePagedCatalogs(runtime)
+                val freshRows = runtime.visibleHomeRows(incoming)
+                retainedState.deferredCatalogRows.keys.retainAll(freshRows.map { it.id }.toSet())
+                retainedState.catalogRows = freshRows.map { fresh ->
                     val previous = displayedById[fresh.id]
-                    val merged = if (explicitRetry || previous == null) fresh
-                        else mergeVisibleCatalogRefresh(previous, fresh)
-                    displayedById[fresh.id] = merged
-                    merged
+                    val rowKey = "catalog:${fresh.id}"
+                    val reordered = previous != null &&
+                        fresh.items.take(previous.items.size).map { it.type to it.id } !=
+                        previous.items.map { it.type to it.id }
+                    if (!explicitRetry && previous != null && reordered && protectedKey == rowKey) {
+                        retainedState.deferredCatalogRows[fresh.id] = fresh
+                        previous
+                    } else {
+                        retainedState.deferredCatalogRows.remove(fresh.id)
+                        if (reordered) pagedSources[rowKey]?.let(retainedState.catalogPagination::reset)
+                        fresh
+                    }
                 }
-                retainedState.catalogRows = displayed
             }
 
             retainedState.loading = retainedState.catalogRows.isEmpty()
@@ -474,6 +486,17 @@ fun TvHomeScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         TvHomePresentation(
             rows = railRows,
+            onCatalogRowFocused = { rowKey ->
+                val deferred = retainedState.deferredCatalogRows
+                if (deferred.keys.any { "catalog:$it" != rowKey }) {
+                    retainedState.catalogRows = retainedState.catalogRows.map { displayed ->
+                        if ("catalog:${displayed.id}" == rowKey) displayed
+                        else deferred.remove(displayed.id)?.also {
+                            pagedCatalogs["catalog:${displayed.id}"]?.let(retainedState.catalogPagination::reset)
+                        } ?: displayed
+                    }
+                }
+            },
             onCatalogPageNeeded = ::requestNextCatalogPage,
             catalogOnly = catalogOnly,
             canToggleCatalogOnly = hasHomeRows,
@@ -638,9 +661,9 @@ private fun buildTvHomeRows(
                         title = title,
                         providerName = row.providerName.takeIf { it.isNotBlank() },
                         kind = TvHomeRowKind.POSTERS,
-                        entries = row.items.mapIndexed { index, media ->
+                        entries = row.items.distinctBy { it.type to it.id }.map { media ->
                             TvHomeEntry.Media(
-                                key = "${row.id}:$index:${media.type}:${media.id}",
+                                key = catalogCardKey("catalog:${row.id}", media),
                                 media = media,
                             )
                         },
@@ -649,23 +672,3 @@ private fun buildTvHomeRows(
             }
         }
     }
-
-private fun mergeVisibleCatalogRefresh(previous: CatalogRow, fresh: CatalogRow): CatalogRow {
-    if (previous.items.isEmpty()) return fresh
-    val previousKeys = previous.items.map { it.type to it.id }
-    val freshKeys = fresh.items.map { it.type to it.id }
-    if (freshKeys.size >= previousKeys.size && freshKeys.take(previousKeys.size) == previousKeys) {
-        return fresh
-    }
-    if (freshKeys == previousKeys.take(freshKeys.size)) {
-        return fresh.copy(items = fresh.items + previous.items.drop(freshKeys.size))
-    }
-
-    val existing = previousKeys.toHashSet()
-    val additions = freshKeys.takeWhile { it !in existing }.size
-    val overlap = freshKeys.drop(additions)
-    if (additions > 0 && overlap.isNotEmpty() && overlap == previousKeys.take(overlap.size)) {
-        return fresh.copy(items = fresh.items.take(additions) + previous.items)
-    }
-    return previous
-}

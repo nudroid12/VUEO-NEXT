@@ -38,7 +38,7 @@ internal class TvHomeCatalogPagination(
     )
 
     private val pages = mutableStateMapOf<CollectionCatalogSource, PageState>()
-    private val loading = mutableSetOf<CollectionCatalogSource>()
+    private val loading = mutableMapOf<CollectionCatalogSource, Any>()
     private val retryAfter = mutableMapOf<CollectionCatalogSource, Long>()
 
     fun matches(profileId: String, refreshToken: Int, kidsLimit: Int?): Boolean =
@@ -49,9 +49,15 @@ internal class TvHomeCatalogPagination(
         if (items.isEmpty()) return row
         val existing = row.entries.mapTo(hashSetOf()) { it.media.type to it.media.id }
         val appended = items.filter { existing.add(it.type to it.id) }.map {
-            TvHomeEntry.Media("paged:${row.key}:${it.type}:${it.id}", it)
+            TvHomeEntry.Media(catalogCardKey(row.key, it), it)
         }
         return if (appended.isEmpty()) row else row.copy(entries = row.entries + appended)
+    }
+
+    fun reset(source: CollectionCatalogSource) {
+        pages.remove(source)
+        loading.remove(source)
+        retryAfter.remove(source)
     }
 
     fun request(
@@ -62,7 +68,9 @@ internal class TvHomeCatalogPagination(
     ): Boolean {
         val initial = pages[source] ?: PageState()
         if (initial.nextSkip == null) return false
-        if (SystemClock.uptimeMillis() < (retryAfter[source] ?: 0L) || !loading.add(source)) return true
+        if (SystemClock.uptimeMillis() < (retryAfter[source] ?: 0L) || source in loading) return true
+        val request = Any()
+        loading[source] = request
 
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
@@ -73,6 +81,7 @@ internal class TvHomeCatalogPagination(
                 repeat(4) {
                     val skip = state.nextSkip ?: return@launch
                     val page = CollectionCatalogResolver.load(runtime.engine, source, skip)
+                    if (loading[source] !== request) return@launch
                     val repeated = page.itemKeys in state.visitedPages
                     val added = if (repeated) emptyList() else page.items.filterTo(mutableListOf()) { item ->
                         (kidsLimit == null || KidsContentPolicy.allows(item.certification, kidsLimit)) &&
@@ -87,13 +96,13 @@ internal class TvHomeCatalogPagination(
                     if (added.isNotEmpty() && skip > 0) return@launch
                 }
             } catch (_: TimeoutCancellationException) {
-                retryAfter[source] = SystemClock.uptimeMillis() + 1_000L
+                if (loading[source] === request) retryAfter[source] = SystemClock.uptimeMillis() + 1_000L
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                retryAfter[source] = SystemClock.uptimeMillis() + 1_000L
+                if (loading[source] === request) retryAfter[source] = SystemClock.uptimeMillis() + 1_000L
             } finally {
-                loading.remove(source)
+                if (loading[source] === request) loading.remove(source)
             }
         }
         return true
