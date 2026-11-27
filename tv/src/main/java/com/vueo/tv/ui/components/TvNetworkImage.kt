@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -347,17 +348,19 @@ internal fun TvRetainedArtwork(
     url: String?,
     modifier: Modifier,
     fallback: Color = TvDesign.Black,
+    slideIn: Boolean = false,
 ) {
     val context = LocalContext.current.applicationContext
     var size by remember { mutableStateOf(IntSize.Zero) }
     var current by remember { mutableStateOf<Bitmap?>(null) }
     var previous by remember { mutableStateOf<Bitmap?>(null) }
     LaunchedEffect(url, size) {
-        if (url.isNullOrBlank() || size == IntSize.Zero) return@LaunchedEffect
-        if (!com.vueo.shared.core.stremio.StremioUrls.isHttpUrl(url)) return@LaunchedEffect
-        val artwork = TvImageCache.memoryEntry(url, size)
-            ?: TvImageCache.load(context, url, size, highPriority = true)
-            ?: return@LaunchedEffect
+        if (size == IntSize.Zero) return@LaunchedEffect
+        val artwork = url?.takeIf(com.vueo.shared.core.stremio.StremioUrls::isHttpUrl)?.let {
+            TvImageCache.memoryEntry(it, size)
+                ?: TvImageCache.load(context, it, size, highPriority = true)
+        }
+        if (artwork == null && !slideIn) return@LaunchedEffect
         if (current === artwork) return@LaunchedEffect
         previous = current
         current = artwork
@@ -365,7 +368,10 @@ internal fun TvRetainedArtwork(
 
     val opacity = remember(current) { Animatable(0f) }
     LaunchedEffect(current) {
-        if (current == null) return@LaunchedEffect
+        if (current == null) {
+            previous = null
+            return@LaunchedEffect
+        }
         opacity.animateTo(
             1f,
             tvTunedSpec(TvMotionGroup.IMAGE, true, tween(durationMillis = 220)),
@@ -386,7 +392,10 @@ internal fun TvRetainedArtwork(
             Image(
                 it.asImageBitmap(),
                 null,
-                Modifier.matchParentSize().alpha(opacity.value),
+                Modifier.matchParentSize().graphicsLayer {
+                    alpha = opacity.value
+                    if (slideIn) translationX = this.size.width * .22f * (1f - opacity.value)
+                },
                 contentScale = ContentScale.Crop,
             )
         }
