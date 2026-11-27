@@ -145,11 +145,12 @@ internal fun VueoPlayerPresentation(
     onPlayEpisode: (EpisodeItem) -> Unit,
     onPanelSelected: (TvPlayerOption) -> Unit,
 ) {
-    val retainedPanelOptions = remember { mutableStateOf<List<TvPlayerOption>>(emptyList()) }
-    LaunchedEffect(panelOptions) {
-        if (panelOptions.isNotEmpty()) retainedPanelOptions.value = panelOptions
+    val retainedSourceOptions = remember { mutableStateOf<List<TvPlayerOption>>(emptyList()) }
+    val sourcesOpen = activePanel == TvPlayerPanel.SOURCES
+    LaunchedEffect(sourcesOpen, panelOptions) {
+        if (sourcesOpen) retainedSourceOptions.value = panelOptions
     }
-    val displayedPanelOptions = panelOptions.ifEmpty { retainedPanelOptions.value }
+    val displayedSourceOptions = if (sourcesOpen) panelOptions else retainedSourceOptions.value
     val progressUpRequester = when {
         playbackError != null -> errorRequester
         activeSkip != null -> skipRequester
@@ -226,11 +227,11 @@ internal fun VueoPlayerPresentation(
                     .align(Alignment.TopStart)
                     .padding(start = 32.dp, top = 32.dp),
             ) {
-                VueoContentWarningsOverlay(
-                    certification = warningCertification,
-                    warnings = contentWarnings,
-                    onAnimationComplete = onWarningComplete,
-                )
+                if (contentWarnings.isNotEmpty()) {
+                    VueoContentWarningsOverlay(contentWarnings, onWarningComplete)
+                } else if (warningCertification != null) {
+                    VueoAgeRatingFallback(warningCertification, onWarningComplete)
+                }
             }
         }
 
@@ -317,7 +318,8 @@ internal fun VueoPlayerPresentation(
                     exit = tvPlayerSidePanelExit(),
                 ),
                 title = episode?.let { "S${it.season}E${it.episode} • ${it.title}" } ?: media.name,
-                options = displayedPanelOptions,
+                options = displayedSourceOptions,
+                active = sourcesOpen,
                 searching = sourcesSearching,
                 pluginsStopped = pluginsStopped,
                 onRefresh = onRefreshSources,
@@ -367,51 +369,117 @@ internal fun VueoPlayerPresentation(
 
 @Composable
 private fun VueoContentWarningsOverlay(
-    certification: String?,
     warnings: List<ContentWarning>,
+    onAnimationComplete: () -> Unit,
+) {
+    val count = warnings.size
+    if (count == 0) return
+
+    val totalLineHeight = (count * 16) + ((count - 1) * 3)
+    val containerAlpha = remember { Animatable(0f) }
+    val lineHeightFraction = remember { Animatable(0f) }
+    val itemAlphas = remember(count) { List(count) { Animatable(0f) } }
+
+    val onComplete by rememberUpdatedState(onAnimationComplete)
+    LaunchedEffect(warnings) {
+        containerAlpha.snapTo(0f)
+        lineHeightFraction.snapTo(0f)
+        itemAlphas.forEach { it.snapTo(0f) }
+
+        containerAlpha.animateTo(1f, tween(300, easing = TvMotion.EaseOut))
+        lineHeightFraction.animateTo(
+            1f,
+            tween(400, easing = TvMotion.EaseOut),
+        )
+
+        itemAlphas.forEach { alpha ->
+            delay(80L)
+            alpha.animateTo(1f, tween(200, easing = TvMotion.EaseOut))
+        }
+
+        delay(5_000L)
+
+        itemAlphas.asReversed().forEach { alpha ->
+            delay(60L)
+            alpha.animateTo(0f, tween(150, easing = TvMotion.EaseInOut))
+        }
+
+        delay(100L)
+        lineHeightFraction.animateTo(
+            0f,
+            tween(300, easing = TvMotion.EaseInOut),
+        )
+        delay(200L)
+        containerAlpha.animateTo(0f, tween(200, easing = TvMotion.EaseInOut))
+        onComplete()
+    }
+
+    if (containerAlpha.value <= 0f) return
+
+    Row(
+        modifier = Modifier.alpha(containerAlpha.value),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .height((totalLineHeight * lineHeightFraction.value).dp)
+                .clip(RoundedCornerShape(50))
+                .background(TvDesign.Accent),
+        )
+        Column(
+            modifier = Modifier.padding(start = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            warnings.forEachIndexed { index, warning ->
+                Row(
+                    modifier = Modifier.alpha(itemAlphas.getOrNull(index)?.value ?: 0f),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = warning.label,
+                        color = Color.White.copy(alpha = .92f),
+                        fontSize = 12.sp,
+                        lineHeight = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = " • ${warning.severity}",
+                        color = Color.White.copy(alpha = .56f),
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VueoAgeRatingFallback(
+    certification: String,
     onAnimationComplete: () -> Unit,
 ) {
     val opacity = remember { Animatable(0f) }
     val onComplete by rememberUpdatedState(onAnimationComplete)
-    LaunchedEffect(Unit) {
+    LaunchedEffect(certification) {
         opacity.animateTo(1f, tween(250, easing = TvMotion.EaseOut))
         delay(5_000L)
         opacity.animateTo(0f, tween(250, easing = TvMotion.EaseInOut))
         onComplete()
     }
 
-    Row(
+    Text(
+        text = certification,
+        color = Color.White,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.SemiBold,
         modifier = Modifier
             .alpha(opacity.value)
             .background(Color.Black.copy(alpha = .72f), RoundedCornerShape(8.dp))
+            .border(1.dp, Color.White.copy(alpha = .65f), RoundedCornerShape(8.dp))
             .padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (certification != null) {
-            val badgeShape = RoundedCornerShape(4.dp)
-            Text(
-                text = certification,
-                color = Color.White,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.border(1.dp, Color.White.copy(alpha = .65f), badgeShape)
-                    .padding(horizontal = 6.dp, vertical = 3.dp),
-            )
-        }
-        if (warnings.isNotEmpty()) {
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                warnings.forEach { warning ->
-                    Text(
-                        text = "${warning.label} • ${warning.severity}",
-                        color = Color.White.copy(alpha = .92f),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
-                }
-            }
-        }
-    }
+    )
 }
 
 @Composable

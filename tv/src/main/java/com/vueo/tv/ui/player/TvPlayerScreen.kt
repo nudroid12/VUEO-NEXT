@@ -461,6 +461,7 @@ fun TvPlayerScreen(
     var contentWarnings by remember(mediaKey) { mutableStateOf<List<ContentWarning>?>(null) }
     var warningVisible by remember(mediaKey, playerSessionId) { mutableStateOf(false) }
     var warningShown by remember(mediaKey, playerSessionId) { mutableStateOf(false) }
+    var warningPendingAfterBackdrop by remember(mediaKey, playerSessionId) { mutableStateOf(false) }
     var textTracks by remember(bundle.videoId) { mutableStateOf<List<TvPlayerTrackChoice>>(emptyList()) }
     var audioTracks by remember(bundle.videoId) { mutableStateOf<List<TvPlayerTrackChoice>>(emptyList()) }
     var subtitlesDisabled by remember(mediaKey) {
@@ -1365,16 +1366,25 @@ fun TvPlayerScreen(
         contentWarnings,
         warningCertification,
         contentWarningsEnabled,
+        playing,
+        warningPendingAfterBackdrop,
+        pauseBackdropVisible,
         playerSessionId,
     ) {
         if (!contentWarningsEnabled) {
+            warningPendingAfterBackdrop = false
             warningVisible = false
             return@LaunchedEffect
         }
 
         // Wait for the advisory lookup before deciding whether to show the age rating.
         val warnings = contentWarnings ?: return@LaunchedEffect
-        if (hasRenderedFirstFrame && !warningShown &&
+        val resumedAfterBackdrop = warningPendingAfterBackdrop && playing && player.isPlaying
+        if (!hasRenderedFirstFrame || pauseBackdropVisible ||
+            (warningPendingAfterBackdrop && !resumedAfterBackdrop)
+        ) return@LaunchedEffect
+        if (resumedAfterBackdrop) warningPendingAfterBackdrop = false
+        if ((!warningShown || resumedAfterBackdrop) &&
             (warnings.isNotEmpty() || warningCertification != null)
         ) {
             warningShown = true
@@ -1751,6 +1761,8 @@ fun TvPlayerScreen(
             if (!player.playWhenReady && player.playbackState == Player.STATE_READY) {
                 hideControls()
                 pauseBackdropVisible = true
+                warningVisible = false
+                warningPendingAfterBackdrop = true
             }
         }
     }
@@ -1836,7 +1848,8 @@ fun TvPlayerScreen(
                         pauseBackdropCapturedKey[0] = 0
                         if (!event.nativeKeyEvent.isCanceled && !latestEpisodeSwitching.value &&
                             playbackError == null && (code == KeyEvent.KEYCODE_DPAD_CENTER ||
-                                code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER)
+                                code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER ||
+                                code == KeyEvent.KEYCODE_MEDIA_PLAY || code == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
                         ) {
                             player.play()
                         }
@@ -2122,12 +2135,13 @@ fun TvPlayerScreen(
             TvPlayerPanel.SUBTITLES, TvPlayerPanel.AUDIO -> emptyList()
             TvPlayerPanel.SOURCES -> playableSources.map { item ->
                 TvPlayerOption(
-                    key = item.url.orEmpty(),
-                    title = PlayerSourceDisplay.providerTitle(item),
-                    meta = PlayerSourceDisplay.compactDetails(item),
+                    key = SourceSelector.identityKey(item.toSourceCandidateForPlayer()),
+                    title = PlayerSourceDisplay.groupTitle(item),
+                    meta = PlayerSourceDisplay.groupedDetails(item),
                     providerName = item.providerName,
 
-                    selected = item.url == activeSource.url,
+                    selected = SourceSelector.identityKey(item.toSourceCandidateForPlayer()) ==
+                        SourceSelector.identityKey(activeSource.toSourceCandidateForPlayer()),
                     playbackFailed = item.url in failedSourceUrls ||
                         (item.url == activeSource.url && playbackError != null),
                 )
@@ -2284,7 +2298,9 @@ fun TvPlayerScreen(
                 when (activePanel) {
                     TvPlayerPanel.SUBTITLES, TvPlayerPanel.AUDIO -> Unit
                     TvPlayerPanel.SOURCES -> {
-                        val target = playableSources.firstOrNull { it.url == option.key }
+                        val target = playableSources.firstOrNull {
+                            SourceSelector.identityKey(it.toSourceCandidateForPlayer()) == option.key
+                        }
                         if (target != null) {
                             if (target.url != activeSource.url) {
                                 resumeTargetMs = player.currentPosition.coerceAtLeast(0L)

@@ -126,6 +126,7 @@ internal fun VueoPlayerCompactOverlay(
 internal fun VueoPlayerSourcesPanel(
     title: String,
     options: List<TvPlayerOption>,
+    active: Boolean,
     searching: Boolean,
     pluginsStopped: Boolean,
     onRefresh: () -> Unit,
@@ -148,14 +149,6 @@ internal fun VueoPlayerSourcesPanel(
     LaunchedEffect(providers) {
         if (selectedProvider != null && selectedProvider !in providers) selectedProvider = null
     }
-    LaunchedEffect(enterListRequest) {
-        if (enterListRequest > 0 && filteredOptions.any { it.enabled }) {
-            withFrameNanos { }
-            listEntryRequester.requestTvFocus()
-        }
-    }
-
-
     Box(Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -259,7 +252,9 @@ internal fun VueoPlayerSourcesPanel(
                         onSelected = onSelected,
                         topRequester = tabRequester(selectedProvider),
                         entryFocusRequester = listEntryRequester,
-                        assignInitialFocus = initialSourceFocus,
+                        assignInitialFocus = active && initialSourceFocus,
+                        entryRequest = enterListRequest.takeIf { active },
+                        onFocused = { initialSourceFocus = false },
                     )
                 }
             }
@@ -278,10 +273,12 @@ internal fun VueoOptionList(
     initialFocusKey: String? = null,
     onFocused: (TvPlayerOption) -> Unit = {},
     assignInitialFocus: Boolean = true,
+    entryRequest: Int? = null,
 ) {
     val state = rememberLazyListState()
     val requesters = remember { mutableMapOf<String, FocusRequester>() }
     var initialFocusAssigned by remember { mutableStateOf(false) }
+    var handledEntryRequest by remember { mutableIntStateOf(entryRequest ?: 0) }
     val initialIndex = remember(options, initialFocusKey) {
         options.indexOfFirst {
             it.key == initialFocusKey && it.enabled
@@ -307,6 +304,11 @@ internal fun VueoOptionList(
         if (requesterFor(initialIndex).requestTvFocus()) {
             initialFocusAssigned = true
         }
+    }
+    LaunchedEffect(entryRequest, firstEnabledIndex) {
+        if (entryRequest == null || entryRequest == handledEntryRequest || firstEnabledIndex < 0) return@LaunchedEffect
+        state.scrollToItem(firstEnabledIndex)
+        if (requesterFor(firstEnabledIndex).requestTvFocus()) handledEntryRequest = entryRequest
     }
     if (options.isEmpty()) {
         Text("Nothing available for this stream.", color = Color.White.copy(alpha = .52f), fontSize = 12.sp)
@@ -424,19 +426,17 @@ private fun VueoOptionRow(
                 ) {
                     Text(
                         option.meta.orEmpty(), color = if (option.selected) TvDesign.OnAccent.copy(alpha = .72f) else Color.White.copy(alpha = .72f), fontSize = 9.sp,
-                        modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f), maxLines = 5, overflow = TextOverflow.Ellipsis,
                     )
-                    if (option.playbackFailed || option.selected) {
-                        Text(
-                            if (option.playbackFailed) "Failed" else "Playing",
-                            color = if (option.playbackFailed) Color(0xFFFF7777) else TvDesign.OnAccent,
-                            fontSize = 9.sp, fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.background(
-                                if (option.playbackFailed) Color(0xFFFF7777).copy(alpha = .12f) else TvDesign.Accent.copy(alpha = .10f),
-                                RoundedCornerShape(50),
-                            ).padding(horizontal = 6.dp, vertical = 3.dp),
-                        )
-                    }
+                    Text(
+                        if (option.playbackFailed) "Failed" else if (option.selected) "Playing" else "Direct",
+                        color = if (option.playbackFailed) Color(0xFFFF7777) else if (option.selected) TvDesign.OnAccent else Color.White.copy(alpha = .62f),
+                        fontSize = 9.sp, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.background(
+                            if (option.playbackFailed) Color(0xFFFF7777).copy(alpha = .12f) else if (option.selected) TvDesign.Accent.copy(alpha = .10f) else Color.White.copy(alpha = .06f),
+                            RoundedCornerShape(50),
+                        ).padding(horizontal = 6.dp, vertical = 3.dp),
+                    )
                 }
             }
         } else {
