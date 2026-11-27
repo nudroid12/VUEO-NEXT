@@ -67,6 +67,7 @@ class TvHomeRetainedState internal constructor(runtime: TvRuntime) {
 
     internal var catalogPagination by mutableStateOf(TvHomeCatalogPagination())
 
+    internal var pendingCatalogRows by mutableStateOf(emptyList<CatalogRow>())
     internal val deferredCatalogRows = mutableMapOf<String, CatalogRow>()
 
     internal var loadedRefreshToken = Int.MIN_VALUE
@@ -220,6 +221,10 @@ fun TvHomeScreen(
             runCatching {
                 coroutineScope {
                     val updates = Channel<List<CatalogRow>>(Channel.CONFLATED)
+                    val pendingUpdates = Channel<List<CatalogRow>>(Channel.CONFLATED)
+                    val pendingPublisher = launch {
+                        for (pending in pendingUpdates) retainedState.pendingCatalogRows = pending
+                    }
                     val publisher = launch {
                         for (partialRows in updates) {
                             publishCatalogRows(partialRows)
@@ -231,11 +236,14 @@ fun TvHomeScreen(
                             runtime.homeRows(
                                 forceRefresh = explicitRetry,
                                 onPartial = { updates.trySend(it) },
+                                onPending = { pendingUpdates.trySend(it) },
                             )
                         }
                     } finally {
                         updates.close()
+                        pendingUpdates.close()
                         publisher.join()
+                        pendingPublisher.join()
                     }
                 }
             }
@@ -248,6 +256,7 @@ fun TvHomeScreen(
                         ?: "Unable to load Home. Check your connection and try again."
                 }
 
+            retainedState.pendingCatalogRows = emptyList()
             retainedState.loading = false
             retainedState.loadedRefreshToken = refreshToken
             handledRetryAttempt = requestedRetryAttempt
@@ -419,6 +428,23 @@ fun TvHomeScreen(
         if (!active || actionEntry != null || (!nearEnd && index != row.entries.lastIndex)) return false
         return pagination?.request(paginationScope, runtime, row, source) == true
     }
+    val pendingRows = retainedState.pendingCatalogRows
+    val catalogPresentationPending = retainedState.presentationCatalogRows !== catalogRows
+    val displayRows = remember(railRows, pendingRows, catalogRows, catalogPresentationPending) {
+        val actualCatalogs = catalogRows.mapTo(hashSetOf()) { it.id }
+        val catalogOrder = runtime.visibleHomeRows(catalogRows + pendingRows.filterNot { it.id in actualCatalogs })
+        val contentByKey = railRows.associateBy { it.key }
+        val orderedRows = catalogOrder.mapNotNull { catalog ->
+            val key = "catalog:${catalog.id}"
+            contentByKey[key] ?: if (catalog.id !in actualCatalogs || catalogPresentationPending) {
+                TvHomeRow(key, catalog.title, TvHomeRowKind.POSTERS, emptyList(), catalog.providerName)
+            } else null
+        }
+        val orderedKeys = orderedRows.mapTo(hashSetOf()) { it.key }
+        val start = railRows.indexOfFirst { it.key in orderedKeys }
+        if (start < 0) railRows + orderedRows
+        else railRows.take(start) + orderedRows + railRows.drop(start).filterNot { it.key in orderedKeys }
+    }
     val hasHomeRows = railRows.any { it.entries.isNotEmpty() }
     val catalogOnly = retainedState.catalogOnlyProfileId == activeProfileId && hasHomeRows
     fun toggleCatalogOnly() {
@@ -501,7 +527,8 @@ fun TvHomeScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         TvHomePresentation(
-            rows = railRows,
+            rows = displayRows,
+            onCatalogViewportChanged = runtime::updateHomeCatalogViewport,
             onCatalogRowFocused = { rowKey ->
                 val deferred = retainedState.deferredCatalogRows
                 if (deferred.keys.any { "catalog:$it" != rowKey }) {

@@ -4,6 +4,7 @@ import com.vueo.shared.core.storage.RecommendationEngine
 import android.content.Context
 import android.os.SystemClock
 import android.util.Log
+import com.vueo.shared.core.extensions.AddonInstallationIdentity
 import com.vueo.shared.core.extensions.CatalogDiscoveryCache
 import com.vueo.shared.core.extensions.StremioAddonExtension
 import com.vueo.shared.core.extensions.UnifiedMediaEngine
@@ -36,7 +37,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Semaphore
@@ -106,11 +106,19 @@ class TvRuntime(context: Context) {
     private var addonsPrepared = false
     private val addonRevision = MutableStateFlow(0)
     private val homeLoadGate = Semaphore(4)
+    private val homeViewportCatalogs = MutableStateFlow<List<String>>(emptyList())
+
+    fun updateHomeCatalogViewport(rowKeys: List<String>) {
+        homeViewportCatalogs.value = rowKeys.mapNotNull {
+            it.takeIf { key -> key.startsWith("catalog:") }?.removePrefix("catalog:")
+        }
+    }
     private val catalogScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val catalogLoadLock = Any()
     private class HomeLoad(
         val configuration: String,
         val rows: MutableStateFlow<List<CatalogRow>>,
+        val pendingRows: MutableStateFlow<List<CatalogRow>>,
         val result: Deferred<List<CatalogRow>>,
     )
     private var homeLoad: HomeLoad? = null
@@ -205,6 +213,7 @@ class TvRuntime(context: Context) {
     suspend fun homeRows(
         forceRefresh: Boolean = false,
         onPartial: ((List<CatalogRow>) -> Unit)? = null,
+        onPending: ((List<CatalogRow>) -> Unit)? = null,
     ): List<CatalogRow> = coroutineScope {
         val configuration = homeConfigurationKey()
         val load = synchronized(catalogLoadLock) {
@@ -213,30 +222,38 @@ class TvRuntime(context: Context) {
                     // Configuration changes must not publish an older load into cache.
                     homeLoad?.takeIf { it.configuration != configuration }?.result?.cancel()
                     val rows = MutableStateFlow(cachedHomeRows())
+                    val pendingRows = MutableStateFlow<List<CatalogRow>>(emptyList())
                     val result = catalogScope.async(start = CoroutineStart.LAZY) {
-                        loadHomeRows(forceRefresh, onPartial = { rows.value = it })
+                        loadHomeRows(forceRefresh, onPartial = { rows.value = it }, onPending = { pendingRows.value = it })
                     }
-                    HomeLoad(configuration, rows, result).also { homeLoad = it }
+                    HomeLoad(configuration, rows, pendingRows, result).also { homeLoad = it }
                 }
         }
         // Destination changes cancel only this subscriber, not the shared load.
         val publisher = if (onPartial != null) launch {
             load.rows.collect { if (it.isNotEmpty()) onPartial(it) }
         } else null
+        val pendingPublisher = if (onPending != null) launch {
+            load.pendingRows.collect { onPending(it) }
+        } else null
         try {
             load.result.start()
             val rows = load.result.await()
             publisher?.cancelAndJoin()
+            pendingPublisher?.cancelAndJoin()
+            onPending?.invoke(emptyList())
             onPartial?.invoke(rows)
             rows
         } finally {
             publisher?.cancelAndJoin()
+            pendingPublisher?.cancelAndJoin()
         }
     }
 
     private suspend fun loadHomeRows(
         forceRefresh: Boolean,
         onPartial: ((List<CatalogRow>) -> Unit)?,
+        onPending: (List<CatalogRow>) -> Unit,
     ): List<CatalogRow> = coroutineScope {
         val configurationKey = homeConfigurationKey()
         val cachedConfiguration = homeCachePrefs.getString("configuration", null)
@@ -250,7 +267,6 @@ class TvRuntime(context: Context) {
         val staleCached = CatalogDiscoveryCache.home(allowStale = true).orEmpty()
         val freshRows = linkedMapOf<String, CatalogRow>()
         val scheduled = mutableSetOf<String>()
-        val jobs = mutableListOf<kotlinx.coroutines.Job>()
         var firstFreshRow = true
 
         fun publish(rows: List<CatalogRow>) = synchronized(freshRows) {
@@ -268,33 +284,48 @@ class TvRuntime(context: Context) {
             Unit
         }
 
-        // Each installed addon can start catalogs immediately. The shared gate
-        // limits ALL these addon jobs together to four catalog requests.
+        fun pendingCatalogs(): List<CatalogRow> = visibleHomeRows(
+            engine.activeStremioAddons().flatMap { addon ->
+                val descriptor = addon.descriptor
+                descriptor.catalogs.filter { it.shouldShowOnHome }.map { catalog ->
+                    CatalogRow(
+                        id = AddonInstallationIdentity.catalogKey(descriptor.installationId, catalog.type, catalog.id),
+                        title = catalog.name ?: "${descriptor.name} ${catalog.type.replaceFirstChar { it.uppercase() }}",
+                        providerName = descriptor.name,
+                        items = emptyList(),
+                    )
+                }
+            },
+        ).distinctBy { it.id }.filterNot { it.id in scheduled }
+
         while (true) {
             val observedRevision = addonRevision.value
-            // Read completion BEFORE the addon snapshot: a manifest finishing
-            // during scheduling must trigger another pass, not be skipped.
             val preparationComplete = addonsPrepared
-            engine.activeStremioAddons().forEach { extension ->
-                if (scheduled.add(extension.descriptor.installationId)) {
-                    jobs += launch {
-                        val rows = engine.loadCatalogRows(
-                            forceRefresh = true,
-                            catalogOrder = content.catalogOrder(),
-                            disabledCatalogKeys = content.disabledCatalogKeys(),
-                            extensionIds = setOf(extension.descriptor.installationId),
-                            updateHomeCache = false,
-                            catalogLoadGate = homeLoadGate,
-                            onPartial = ::publish,
-                        )
-                        publish(rows)
-                    }
-                }
+            val pending = pendingCatalogs()
+            onPending(pending)
+            if (pending.isEmpty()) {
+                if (preparationComplete) break
+                addonRevision.first { it != observedRevision }
+                continue
             }
-            if (preparationComplete) break
-            addonRevision.first { it != observedRevision }
+
+            // The Home viewport can move any time a batch is loading.
+            // Re-read its priorities before scheduling the next batch.
+            val visibleOrder = homeViewportCatalogs.value.withIndex().associate { it.value to it.index }
+            val batch = pending.sortedBy { visibleOrder[it.id] ?: Int.MAX_VALUE }.take(4)
+            val keys = batch.mapTo(hashSetOf()) { it.id }
+            val loaded = engine.loadCatalogRows(
+                forceRefresh = true,
+                catalogOrder = content.catalogOrder(),
+                disabledCatalogKeys = content.disabledCatalogKeys(),
+                updateHomeCache = false,
+                catalogLoadGate = homeLoadGate,
+                requestedCatalogKeys = keys,
+                onPartial = ::publish,
+            )
+            publish(loaded)
+            scheduled.addAll(keys)
         }
-        jobs.joinAll()
         val fresh = synchronized(freshRows) { freshRows.values.toList() }
         if (fresh.isNotEmpty()) {
             val activeIds = engine.activeStremioAddons().map { it.descriptor.installationId }

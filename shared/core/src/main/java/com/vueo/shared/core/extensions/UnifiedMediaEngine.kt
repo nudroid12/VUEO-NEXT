@@ -79,6 +79,7 @@ class UnifiedMediaEngine(
         extensionIds: Set<String>? = null,
         updateHomeCache: Boolean = true,
         catalogLoadGate: Semaphore? = null,
+        requestedCatalogKeys: Set<String>? = null,
     ): List<CatalogRow> = filterVisibleRows(loadCatalogRowsUnfiltered(
         maxRows = maxRows,
         forceRefresh = forceRefresh,
@@ -88,6 +89,7 @@ class UnifiedMediaEngine(
         extensionIds = extensionIds,
         updateHomeCache = updateHomeCache,
         catalogLoadGate = catalogLoadGate,
+        requestedCatalogKeys = requestedCatalogKeys,
     ))
 
     suspend fun search(
@@ -178,9 +180,10 @@ class UnifiedMediaEngine(
         extensionIds: Set<String>? = null,
         updateHomeCache: Boolean = true,
         catalogLoadGate: Semaphore? = null,
+        requestedCatalogKeys: Set<String>? = null,
     ): List<CatalogRow> = PerformanceDiagnostics.measureWork("catalog_load", Tab.HOME) {
         coroutineScope {
-            if (!forceRefresh && extensionIds == null) {
+            if (!forceRefresh && extensionIds == null && requestedCatalogKeys == null) {
                 CatalogDiscoveryCache
                     .home()
                     ?.let { cachedRows ->
@@ -224,6 +227,11 @@ class UnifiedMediaEngine(
                             .map { catalog ->
                                 extension to catalog
                             }
+                    }
+                    .filter { (extension, catalog) ->
+                        requestedCatalogKeys == null || catalogKey(
+                            extension.descriptor.installationId, catalog.type, catalog.id,
+                        ) in requestedCatalogKeys
                     }
                     .sortedBy {
                         (extension, catalog) ->

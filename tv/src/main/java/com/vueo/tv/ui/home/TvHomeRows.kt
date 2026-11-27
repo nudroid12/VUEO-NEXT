@@ -161,6 +161,7 @@ internal fun TvModernHomeRows(
     onVerticalMotionChanged: (Boolean) -> Unit,
     onUpFromFirstRow: () -> Unit,
     onLeftAtRowStart: (() -> Unit)?,
+    onCatalogViewportChanged: (List<String>) -> Unit,
     onCatalogPageNeeded: (TvHomeRow, Int) -> Boolean,
     onFocused: (TvHomeRow, Int, TvHomeEntry) -> Unit,
     onOpen: (TvHomeEntry) -> Unit,
@@ -312,6 +313,24 @@ internal fun TvModernHomeRows(
             .collect { currentMotionCallback(it) }
     }
 
+    val currentViewportCallback by rememberUpdatedState(onCatalogViewportChanged)
+    LaunchedEffect(active, verticalState) {
+        if (!active) return@LaunchedEffect
+        snapshotFlow {
+            val layout = verticalState.layoutInfo
+            val visible = layout.visibleItemsInfo.filter {
+                it.offset < layout.viewportEndOffset && it.offset + it.size > layout.viewportStartOffset
+            }
+            val first = visible.firstOrNull()?.index ?: 0
+            val last = visible.lastOrNull()?.index ?: first
+            currentRows.subList(first.coerceAtMost(currentRows.size), (last + 3).coerceAtMost(currentRows.size))
+                .map { it.key }
+        }.collect { currentViewportCallback(it) }
+    }
+    DisposableEffect(active) {
+        onDispose { if (active) currentViewportCallback(emptyList()) }
+    }
+
     val context = LocalContext.current.applicationContext
     LaunchedEffect(active, rowsLayout.portraitCards, verticalState, density) {
         if (!active) return@LaunchedEffect
@@ -441,15 +460,16 @@ internal fun TvModernHomeRows(
     // Initial Home focus is separate from horizontal LazyRow position.
     // If Source navigation disposed Home, its new composition must recover the
     // saved row/card rather than resetting to row 1 when returning from Details.
-    LaunchedEffect(focusResetToken, rows.isNotEmpty(), navigationVisible, routeReturnPending) {
+    val hasFocusableRows = rows.any { it.entries.isNotEmpty() }
+    LaunchedEffect(focusResetToken, hasFocusableRows, navigationVisible, routeReturnPending) {
         if (focusResetToken <= 0 || appliedFocusResetToken == focusResetToken ||
-            rows.isEmpty() || navigationVisible || routeReturnPending
+            !hasFocusableRows || navigationVisible || routeReturnPending
         ) return@LaunchedEffect
-        appliedFocusResetToken = focusResetToken
         val savedRowKey = TvHomeFocusMemory.activeRowKey
         val targetRowIndex = rows.indexOfFirst { it.key == savedRowKey && it.entries.isNotEmpty() }
             .takeIf { it >= 0 } ?: rows.indexOfFirst { it.entries.isNotEmpty() }
                 .takeIf { it >= 0 } ?: return@LaunchedEffect
+        appliedFocusResetToken = focusResetToken
         val targetRow = rows[targetRowIndex]
         val targetCardIndex = (TvHomeFocusMemory.focusedIndexByRow[targetRow.key] ?: 0)
             .coerceIn(0, targetRow.entries.lastIndex)
@@ -600,7 +620,7 @@ internal fun TvModernHomeRows(
                     val activeRow = TvHomeFocusMemory.activeRowKey
                     if (native.repeatCount == 0) {
                         finishFastVerticalScroll()
-                        if (movingUp && activeRow == currentRows.firstOrNull()?.key) {
+                        if (movingUp && activeRow == currentRows.firstOrNull { it.entries.isNotEmpty() }?.key) {
                             onUpFromFirstRow()
                             return@onPreviewKeyEvent true
                         }
@@ -643,6 +663,21 @@ internal fun TvModernHomeRows(
                 key = { _, row -> row.key },
                 contentType = { _, row -> row.kind },
             ) { rowIndex, row ->
+                if (row.entries.isEmpty()) {
+                    Column(
+                        Modifier.padding(start = rowsLayout.startPadding),
+                        verticalArrangement = Arrangement.spacedBy(RowTitleSpacing),
+                    ) {
+                        Text(row.title, color = TvDesign.White, fontSize = 16.sp, lineHeight = RowTitleLineHeight)
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            repeat(5) {
+                                Box(Modifier.width(PosterWidth).height(MODERN_HOME_POSTER_HEIGHT)
+                                    .background(TvDesign.SurfaceRaised, PosterShape))
+                            }
+                        }
+                    }
+                    return@itemsIndexed
+                }
                 val rowVisible by remember(verticalState, row.key) {
                     derivedStateOf {
                         verticalState.layoutInfo.visibleItemsInfo.any {
