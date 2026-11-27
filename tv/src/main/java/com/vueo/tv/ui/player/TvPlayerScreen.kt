@@ -89,6 +89,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import com.vueo.shared.core.enrichment.ContentWarning
 import com.vueo.shared.core.enrichment.ContentWarningRepository
 import com.vueo.shared.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.media.EpisodeItem
@@ -124,6 +125,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
@@ -453,9 +455,10 @@ fun TvPlayerScreen(
     var ended by remember { mutableStateOf(false) }
     var nextCountdown by remember { mutableIntStateOf(0) }
     var resolvedImdbId by remember(mediaKey) { mutableStateOf<String?>(null) }
+    var imdbLookupComplete by remember(mediaKey) { mutableStateOf(false) }
     var skipSegments by remember(mediaKey) { mutableStateOf<List<PlayerSkipSegment>>(emptyList()) }
     val warningCertification = ContentWarningRepository.tvCertification(media)
-    var contentWarnings by remember(mediaKey) { mutableStateOf<List<String>>(emptyList()) }
+    var contentWarnings by remember(mediaKey) { mutableStateOf<List<ContentWarning>?>(null) }
     var warningVisible by remember(mediaKey, playerSessionId) { mutableStateOf(false) }
     var warningShown by remember(mediaKey, playerSessionId) { mutableStateOf(false) }
     var textTracks by remember(bundle.videoId) { mutableStateOf<List<TvPlayerTrackChoice>>(emptyList()) }
@@ -1318,7 +1321,8 @@ fun TvPlayerScreen(
     }
 
     LaunchedEffect(media.id, bundle.videoId, episode?.id, runtime.pluginStore.tmdbApiKey()) {
-        resolvedImdbId =
+        imdbLookupComplete = false
+        val imdbId =
             ContentWarningRepository.titleImdbId(media)
                 ?: ContentWarningRepository.extractImdbId(bundle.videoId)
                 ?: ContentWarningRepository.extractImdbId(episode?.id)
@@ -1328,6 +1332,9 @@ fun TvPlayerScreen(
                         apiKey = runtime.pluginStore.tmdbApiKey(),
                     ).id
                 }.getOrNull()?.let(ContentWarningRepository::extractImdbId)
+        ensureActive()
+        resolvedImdbId = imdbId
+        imdbLookupComplete = true
     }
 
     LaunchedEffect(
@@ -1347,13 +1354,10 @@ fun TvPlayerScreen(
         }
     }
 
-    LaunchedEffect(mediaKey, resolvedImdbId, contentWarningsEnabled) {
-        val imdbId = resolvedImdbId
-        contentWarnings = if (contentWarningsEnabled && imdbId != null) {
-            ContentWarningRepository.getForTvTitle(imdbId)
-        } else {
-            emptyList()
-        }
+    LaunchedEffect(mediaKey, resolvedImdbId, imdbLookupComplete, contentWarningsEnabled) {
+        contentWarnings = null
+        if (!contentWarningsEnabled || !imdbLookupComplete) return@LaunchedEffect
+        contentWarnings = resolvedImdbId?.let { ContentWarningRepository.get(it) }.orEmpty()
     }
 
     LaunchedEffect(
@@ -1368,8 +1372,11 @@ fun TvPlayerScreen(
             return@LaunchedEffect
         }
 
-        val hasAdvisory = warningCertification != null || contentWarnings.isNotEmpty()
-        if (hasRenderedFirstFrame && hasAdvisory && !warningShown) {
+        // Wait for the advisory lookup before deciding whether to show the age rating.
+        val warnings = contentWarnings ?: return@LaunchedEffect
+        if (hasRenderedFirstFrame && !warningShown &&
+            (warnings.isNotEmpty() || warningCertification != null)
+        ) {
             warningShown = true
             warningVisible = true
         }
@@ -2161,8 +2168,8 @@ fun TvPlayerScreen(
             nextEpisode = nextEpisode,
             activeSkip = activeSkip.takeUnless { pauseBackdropVisible },
             nextCountdown = nextCountdown,
-            contentWarnings = contentWarnings,
-            warningCertification = warningCertification,
+            contentWarnings = contentWarnings.orEmpty(),
+            warningCertification = warningCertification.takeIf { contentWarnings?.isEmpty() == true },
             warningVisible = warningVisible,
             onWarningComplete = { warningVisible = false },
             playbackError = playbackError,

@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
@@ -295,6 +296,28 @@ internal fun TvModernHomeRows(
             .collect { currentMotionCallback(it) }
     }
 
+    suspend fun revealCatalogRow(index: Int, row: TvHomeRow, movingDown: Boolean) {
+        val layout = verticalState.layoutInfo
+        if (layout.visibleItemsInfo.none { it.key == row.key }) {
+            val viewportHeight = layout.viewportEndOffset - layout.viewportStartOffset
+            val rowHeight = with(density) { row.kind.homeRowContentHeight(this).roundToPx() }
+            val offset = if (movingDown) (viewportHeight - rowHeight).coerceAtLeast(0) else 0
+            verticalState.animateScrollToItem(index, -offset)
+        }
+
+        val updated = verticalState.layoutInfo
+        val item = updated.visibleItemsInfo.firstOrNull { it.key == row.key } ?: return
+        val top = item.offset - updated.viewportStartOffset
+        val bottom = item.offset + item.size - updated.viewportEndOffset
+        val distance = when {
+            item.size > updated.viewportEndOffset - updated.viewportStartOffset -> top
+            top < 0 -> top
+            bottom > 0 -> bottom
+            else -> 0
+        }
+        if (distance != 0) verticalState.animateScrollBy(distance.toFloat())
+    }
+
     fun finishFastVerticalScroll() {
         if (!fastVerticalScrolling) return
         val rowIndex = pendingVerticalRowIndex
@@ -314,7 +337,9 @@ internal fun TvModernHomeRows(
         verticalFocusJob[0] = verticalScope.launch {
             // Final snap does not animate through intermediary rows. Only
             // the selected destination gets focus when D-pad is released.
-            if (verticalState.firstVisibleItemIndex != rowIndex ||
+            if (catalogOnly) {
+                revealCatalogRow(rowIndex, targetRow, rowIndex >= verticalState.firstVisibleItemIndex)
+            } else if (verticalState.firstVisibleItemIndex != rowIndex ||
                 verticalState.firstVisibleItemScrollOffset != 0
             ) verticalState.scrollToItem(rowIndex, 0)
             withFrameNanos { }
@@ -385,7 +410,8 @@ internal fun TvModernHomeRows(
                     "repeat=$repeatCount pendingIndex=$requestedIndex"
             }
             verticalFocusJob[0] = verticalScope.launch {
-                verticalState.scrollToItem(requestedIndex, 0)
+                if (catalogOnly) revealCatalogRow(requestedIndex, targetRow, delta > 0)
+                else verticalState.scrollToItem(requestedIndex, 0)
             }
             return true
         }
@@ -412,7 +438,9 @@ internal fun TvModernHomeRows(
             }
             val changesRowHeight = availableRows[actualIndex].kind.homeRowContentHeight(density) !=
                 targetRow.kind.homeRowContentHeight(density)
-            if (!onScreen || changesRowHeight) {
+            if (catalogOnly) {
+                revealCatalogRow(requestedIndex, targetRow, delta > 0)
+            } else if (!onScreen || changesRowHeight) {
                 verticalState.animateScrollToItem(requestedIndex, 0)
             }
             withFrameNanos { }
@@ -601,7 +629,7 @@ internal fun TvModernHomeRows(
                 .onFocusChanged { state ->
                     if (state.hasFocus && !currentNavigationVisible) onContentFocused()
                 },
-            contentPadding = PaddingValues(bottom = rowsViewportHeight),
+            contentPadding = PaddingValues(bottom = if (catalogOnly) 24.dp else rowsViewportHeight),
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             itemsIndexed(

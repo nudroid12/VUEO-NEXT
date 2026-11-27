@@ -1,5 +1,6 @@
 package com.vueo.tv.player
 
+import com.vueo.shared.core.enrichment.ContentWarning
 import com.vueo.tv.ui.motion.*
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInHorizontally
@@ -26,7 +27,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -98,7 +98,7 @@ internal fun VueoPlayerPresentation(
     nextEpisode: EpisodeItem?,
     activeSkip: PlayerSkipSegment?,
     nextCountdown: Int,
-    contentWarnings: List<String>,
+    contentWarnings: List<ContentWarning>,
     warningCertification: String?,
     warningVisible: Boolean,
     onWarningComplete: () -> Unit,
@@ -368,7 +368,7 @@ internal fun VueoPlayerPresentation(
 @Composable
 private fun VueoContentWarningsOverlay(
     certification: String?,
-    warnings: List<String>,
+    warnings: List<ContentWarning>,
     onAnimationComplete: () -> Unit,
 ) {
     val opacity = remember { Animatable(0f) }
@@ -400,15 +400,16 @@ private fun VueoContentWarningsOverlay(
             )
         }
         if (warnings.isNotEmpty()) {
-            Text(
-                text = warnings.joinToString(" · "),
-                color = Color.White.copy(alpha = .92f),
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.widthIn(max = 430.dp),
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                warnings.forEach { warning ->
+                    Text(
+                        text = "${warning.label} • ${warning.severity}",
+                        color = Color.White.copy(alpha = .92f),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+            }
         }
     }
 }
