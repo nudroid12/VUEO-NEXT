@@ -2572,6 +2572,21 @@ internal fun MediaDetailsScreen(
                 }
             }
 
+        val directors = item.directors.map(String::trim)
+            .filter(String::isNotBlank)
+            .distinctBy(String::lowercase)
+        if (directors.isNotEmpty()) {
+            item(key = "details_director_credit") {
+                Text(
+                    text = "Director: ${directors.joinToString(", ")}",
+                    modifier = Modifier.padding(horizontal = 18.dp),
+                    color = Color.White.copy(alpha = .78f),
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                )
+            }
+        }
+
         val detailCast = DetailPeoplePolicy.cast(item)
         val credits = mobileCrewCredits(item)
         if (detailCast.isNotEmpty() || credits.isNotEmpty()) {

@@ -27,6 +27,8 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.combinedClickable
@@ -415,10 +417,15 @@ internal fun StableDetailsMetadata(
             if (advisory.isNotEmpty()) {
                 Text(
                     text = advisory.joinToString(" · "),
-                    modifier = Modifier.padding(horizontal = 18.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 18.dp),
                     color = Color.White.copy(alpha = .78f),
                     fontSize = 12.sp,
                     lineHeight = 17.sp,
+                    maxLines = 1,
+                    softWrap = false,
                 )
             }
         }
@@ -765,7 +772,6 @@ internal fun mobileCrewCredits(media: MediaItem): List<MediaPerson> {
 
     for ((role, names) in listOf(
         "Creator" to media.creators,
-        "Director" to media.directors,
         "Writer" to media.writers,
     )) {
         for (name in names) {
