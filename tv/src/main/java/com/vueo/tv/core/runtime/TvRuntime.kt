@@ -39,6 +39,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.sync.Semaphore
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
@@ -119,6 +120,7 @@ class TvRuntime(context: Context) {
         val configuration: String,
         val rows: MutableStateFlow<List<CatalogRow>>,
         val pendingRows: MutableStateFlow<List<CatalogRow>>,
+        val eager: MutableStateFlow<Boolean>,
         val result: Deferred<List<CatalogRow>>,
     )
     private var homeLoad: HomeLoad? = null
@@ -223,12 +225,15 @@ class TvRuntime(context: Context) {
                     homeLoad?.takeIf { it.configuration != configuration }?.result?.cancel()
                     val rows = MutableStateFlow(cachedHomeRows())
                     val pendingRows = MutableStateFlow<List<CatalogRow>>(emptyList())
+                    val eager = MutableStateFlow(onPending == null || forceRefresh)
                     val result = catalogScope.async(start = CoroutineStart.LAZY) {
-                        loadHomeRows(forceRefresh, onPartial = { rows.value = it }, onPending = { pendingRows.value = it })
+                        loadHomeRows(forceRefresh, eager, onPartial = { rows.value = it }, onPending = { pendingRows.value = it })
                     }
-                    HomeLoad(configuration, rows, pendingRows, result).also { homeLoad = it }
+                    HomeLoad(configuration, rows, pendingRows, eager, result).also { homeLoad = it }
                 }
         }
+        // Callers such as Search need a complete catalogue without a Home viewport.
+        if (onPending == null || forceRefresh) load.eager.value = true
         // Destination changes cancel only this subscriber, not the shared load.
         val publisher = if (onPartial != null) launch {
             load.rows.collect { if (it.isNotEmpty()) onPartial(it) }
@@ -252,6 +257,7 @@ class TvRuntime(context: Context) {
 
     private suspend fun loadHomeRows(
         forceRefresh: Boolean,
+        eager: MutableStateFlow<Boolean>,
         onPartial: ((List<CatalogRow>) -> Unit)?,
         onPending: (List<CatalogRow>) -> Unit,
     ): List<CatalogRow> = coroutineScope {
@@ -312,7 +318,18 @@ class TvRuntime(context: Context) {
             // The Home viewport can move any time a batch is loading.
             // Re-read its priorities before scheduling the next batch.
             val visibleOrder = homeViewportCatalogs.value.withIndex().associate { it.value to it.index }
-            val batch = pending.sortedBy { visibleOrder[it.id] ?: Int.MAX_VALUE }.take(4)
+            val ordered = pending.sortedBy { visibleOrder[it.id] ?: Int.MAX_VALUE }
+            val firstBatch = scheduled.isEmpty() && visibleOrder.isEmpty()
+            val batch = (if (eager.value || firstBatch) ordered else ordered.filter {
+                it.id in visibleOrder
+            }).take(4)
+            if (batch.isEmpty()) {
+                val pendingKeys = pending.mapTo(hashSetOf()) { it.id }
+                combine(homeViewportCatalogs, eager, addonRevision) { viewport, all, revision ->
+                    all || revision != observedRevision || viewport.any { it in pendingKeys }
+                }.first { it }
+                continue
+            }
             val keys = batch.mapTo(hashSetOf()) { it.id }
             val loaded = engine.loadCatalogRows(
                 forceRefresh = true,

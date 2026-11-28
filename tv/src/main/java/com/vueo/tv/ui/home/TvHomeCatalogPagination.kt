@@ -54,9 +54,20 @@ internal class TvHomeCatalogPagination(
         return if (appended.isEmpty()) row else row.copy(entries = row.entries + appended)
     }
 
-    fun reset(source: CollectionCatalogSource, retainItems: Boolean = false) {
-        val previous = pages.remove(source)
-        if (retainItems && previous != null) pages[source] = PageState(items = previous.items)
+    fun reset(source: CollectionCatalogSource) {
+        pages.remove(source)
+        loading.remove(source)
+        retryAfter.remove(source)
+    }
+
+    fun prepend(source: CollectionCatalogSource, count: Int, canShiftCursor: Boolean) {
+        val previous = pages[source] ?: return
+        pages[source] = if (canShiftCursor) {
+            previous.copy(nextSkip = previous.nextSkip?.let { if (it > 0) it + count else it })
+        } else {
+            PageState(items = previous.items)
+        }
+        // An in-flight request still uses the previous cursor.
         loading.remove(source)
         retryAfter.remove(source)
     }

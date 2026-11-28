@@ -195,9 +195,11 @@ fun TvHomeScreen(
                         overlap.isNotEmpty() && overlap == previousKeys.take(overlap.size)
                     if (canPrepend && previous != null) {
                         retainedState.deferredCatalogRows.remove(fresh.id)
-                        // Reload the raw provider cursor while retaining already loaded cards.
-                        // The number of visible additions can differ from the provider's raw count.
-                        pagedSources[rowKey]?.let { retainedState.catalogPagination.reset(it, retainItems = true) }
+                        // Kids filtering can hide provider results, so its visible count
+                        // cannot be used as a raw provider cursor offset.
+                        pagedSources[rowKey]?.let {
+                            retainedState.catalogPagination.prepend(it, added, runtime.profileStore.kidsAgeLimit() == null)
+                        }
                         fresh.copy(items = fresh.items.take(added) + previous.items)
                     } else if (!explicitRetry && previous != null && freshKeys.isNotEmpty() &&
                         freshKeys.size < previousKeys.size && freshKeys == previousKeys.take(freshKeys.size)
