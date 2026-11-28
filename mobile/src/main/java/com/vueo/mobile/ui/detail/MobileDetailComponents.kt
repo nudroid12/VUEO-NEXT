@@ -39,8 +39,6 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.layout.SubcomposeLayout
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
@@ -126,6 +124,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -136,7 +136,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -199,7 +198,6 @@ import com.vueo.mobile.core.enrichment.MediaRating
 import com.vueo.mobile.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.enrichment.ContentWarning
 import com.vueo.shared.core.enrichment.ContentWarningRepository
-import com.vueo.shared.core.detail.DetailPeoplePolicy
 import com.vueo.shared.core.detail.DetailUpstreamPolicy
 import com.vueo.shared.core.home.HomeCatalogPolicy
 import com.vueo.shared.core.home.HomeRecommendationPolicy
@@ -403,99 +401,29 @@ internal fun StableDetailsMetadata(
     vueoMatchPercent: Int?,
     media: MediaItem,
 ) {
-    val density = LocalDensity.current
-    val creditHeight = with(density) { 20.sp.toDp() }.coerceAtLeast(20.dp)
-    val credits = remember(media) { DetailPeoplePolicy.creditLines(media) }
-    val visibleCredits = listOfNotNull(
-        credits.firstOrNull { it.label != "Writer" },
-        credits.firstOrNull { it.label == "Writer" },
-    )
-
+    val certification = ContentWarningRepository.tvCertification(media)
+    val imdbId = ContentWarningRepository.titleImdbId(media)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        AdaptiveDetailsFactsAndRatings(facts, ratings, vueoMatchPercent)
-        if (visibleCredits.isNotEmpty()) {
-            Column(
-                modifier = Modifier.padding(horizontal = 18.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                visibleCredits.forEach { credit ->
-                    DetailsMetadataArrival {
-                        Box(
-                            Modifier.fillMaxWidth().height(creditHeight),
-                            contentAlignment = Alignment.CenterStart,
-                        ) {
-                            Text(
-                                text = "${credit.label}: ${credit.names.take(3).joinToString(", ")}",
-                                color = Color.White.copy(alpha = .78f),
-                                fontSize = 12.sp,
-                                lineHeight = 17.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                }
-            }
+        if (facts.isNotEmpty()) {
+            Box(Modifier.padding(horizontal = 18.dp)) { DetailsFactsText(facts) }
         }
-    }
-}
-
-/** Measure the existing badges at their real font scale; merge only when everything fits. */
-@Composable
-private fun AdaptiveDetailsFactsAndRatings(
-    facts: List<String>,
-    ratings: List<MediaRating>,
-    vueoMatchPercent: Int?,
-) {
-    val priority = remember { mapOf("imdb" to 0, "tomatoes" to 1, "metacritic" to 2, "tmdb" to 3, "trakt" to 4) }
-    val ordered = remember(ratings) {
-        ratings.distinctBy { it.source }.sortedBy { priority[it.source] ?: Int.MAX_VALUE }
-    }
-    val hasFacts = facts.isNotEmpty()
-    val hasRatings = ordered.isNotEmpty() || vueoMatchPercent != null
-    if (!hasFacts && !hasRatings) return
-
-    SubcomposeLayout(Modifier.fillMaxWidth().padding(horizontal = 18.dp)) { constraints ->
-        val natural = Constraints()
-        val minimumRowHeight = 24.dp.roundToPx()
-        val inlineGap = 12.dp.roundToPx()
-        val stackedGap = 6.dp.roundToPx()
-        val factsProbe = if (hasFacts) subcompose("facts_probe") {
-            DetailsFactsText(facts)
-        }.single().measure(natural) else null
-        val ratingsProbe = if (hasRatings) subcompose("ratings_probe") {
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                ordered.forEach { rating -> DetailsMetadataArrival { MediaRatingMark(rating) } }
-                vueoMatchPercent?.let { percent -> DetailsMetadataArrival { DnaMatchMark(percent) } }
+        key(imdbId) {
+            val warnings by produceState(emptyList<String>()) {
+                value = imdbId?.let { ContentWarningRepository.getForTvTitle(it) }.orEmpty()
             }
-        }.single().measure(natural) else null
-        val requiredWidth = (factsProbe?.width ?: 0) + (ratingsProbe?.width ?: 0) +
-            if (hasFacts && hasRatings) inlineGap else 0
-
-        if (requiredWidth <= constraints.maxWidth) {
-            val height = maxOf(minimumRowHeight, factsProbe?.height ?: 0, ratingsProbe?.height ?: 0)
-            layout(constraints.maxWidth, height) {
-                factsProbe?.placeRelative(0, (height - factsProbe.height) / 2)
-                ratingsProbe?.placeRelative(
-                    if (hasFacts) factsProbe!!.width + inlineGap else 0,
-                    (height - ratingsProbe.height) / 2,
+            val advisory = listOfNotNull(certification) + warnings
+            if (advisory.isNotEmpty()) {
+                Text(
+                    text = advisory.joinToString(" · "),
+                    modifier = Modifier.padding(horizontal = 18.dp),
+                    color = Color.White.copy(alpha = .78f),
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
                 )
             }
-        } else {
-            val bounded = Constraints(maxWidth = constraints.maxWidth)
-            val factsRow = if (hasFacts) subcompose("facts_stacked") {
-                DetailsFactsText(facts)
-            }.single().measure(bounded) else null
-            val ratingsRow = if (hasRatings) subcompose("ratings_stacked") {
-                MediaRatingsStrip(ratings, vueoMatchPercent, horizontalPadding = 0.dp)
-            }.single().measure(bounded) else null
-            val factsHeight = factsRow?.let { maxOf(minimumRowHeight, it.height) } ?: 0
-            val ratingsHeight = ratingsRow?.let { maxOf(minimumRowHeight, it.height) } ?: 0
-            val gap = if (hasFacts && hasRatings) stackedGap else 0
-            layout(constraints.maxWidth, factsHeight + gap + ratingsHeight) {
-                factsRow?.placeRelative(0, (factsHeight - factsRow.height) / 2)
-                ratingsRow?.placeRelative(0, factsHeight + gap + (ratingsHeight - ratingsRow.height) / 2)
-            }
+        }
+        if (ratings.isNotEmpty() || vueoMatchPercent != null) {
+            MediaRatingsStrip(ratings, vueoMatchPercent)
         }
     }
 }
@@ -724,46 +652,6 @@ internal fun DnaMatchMark(
     }
 }
 
-@Composable
-internal fun MediaCreditsSummary(
-    media: MediaItem,
-) {
-    val credits = remember(media) { DetailPeoplePolicy.creditLines(media) }
-    Column(
-        modifier =
-            Modifier.padding(
-                horizontal = 18.dp
-            ),
-        verticalArrangement =
-            Arrangement.spacedBy(
-                6.dp
-            ),
-    ) {
-        credits.forEach { credit ->
-            DetailsCreditLine(
-                label = credit.label,
-                names = credit.names,
-            )
-        }
-    }
-}
-
-@Composable
-internal fun DetailsCreditLine(
-    label: String,
-    names: List<String>,
-) {
-    Text(
-        text =
-            "$label: ${names.take(3).joinToString(", ")}",
-        color =
-            Color.White.copy(
-                alpha = .78f
-            ),
-        fontSize = 12.sp,
-        lineHeight = 17.sp,
-    )
-}
 
 @Composable
 internal fun MediaCompanySection(
@@ -869,109 +757,137 @@ internal fun MediaCompanySection(
     }
 }
 
+internal fun mobileCrewCredits(media: MediaItem): List<MediaPerson> {
+    val rolesByName = linkedMapOf<String, MutableSet<String>>()
+    val displayNames = mutableMapOf<String, String>()
+    val profiles = media.cast.filter { !it.profile.isNullOrBlank() }
+        .associateBy { it.name.trim().lowercase() }
+
+    for ((role, names) in listOf(
+        "Creator" to media.creators,
+        "Director" to media.directors,
+        "Writer" to media.writers,
+    )) {
+        for (name in names) {
+            val displayName = name.trim()
+            if (displayName.isEmpty()) continue
+            val key = displayName.lowercase()
+            displayNames.putIfAbsent(key, displayName)
+            rolesByName.getOrPut(key) { linkedSetOf() }.add(role)
+        }
+    }
+
+    return rolesByName.map { (key, roles) ->
+        MediaPerson(
+            name = displayNames.getValue(key),
+            role = roles.joinToString(" & "),
+            profile = profiles[key]?.profile,
+        )
+    }
+}
+
 @Composable
 internal fun MediaCastSection(
     cast: List<MediaPerson>,
+    credits: List<MediaPerson>,
     onPersonClick: (MediaPerson) -> Unit,
 ) {
-    Column(
-        verticalArrangement =
-            Arrangement.spacedBy(
-                10.dp
-            ),
-    ) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
-            text = "Cast",
-            modifier =
-                Modifier.padding(
-                    horizontal = 18.dp
-                ),
+            text = if (cast.isEmpty()) "Credits" else "Cast",
+            modifier = Modifier.padding(horizontal = 18.dp),
             color = Color.White,
             fontSize = 19.sp,
-            fontWeight =
-                FontWeight.Black,
+            fontWeight = FontWeight.Black,
         )
 
         LazyRow(
-            contentPadding =
-                PaddingValues(
-                    horizontal = 18.dp
-                ),
-            horizontalArrangement =
-                Arrangement.spacedBy(
-                    12.dp
-                ),
+            contentPadding = PaddingValues(horizontal = 18.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             items(
-                cast,
-                key = {
-                    "${it.name}:${it.character.orEmpty()}"
-                },
+                cast.distinctBy { it.name to it.character.orEmpty() },
+                key = { "cast:${it.name}:${it.character.orEmpty()}" },
             ) { person ->
-                Column(
-                    modifier =
-                        Modifier
-                            .width(78.dp)
-                            .clickable { onPersonClick(person) },
-                    horizontalAlignment =
-                        Alignment.CenterHorizontally,
-                    verticalArrangement =
-                        Arrangement.spacedBy(
-                            4.dp
-                        ),
-                ) {
-                    Surface(
-                        modifier =
-                            Modifier.size(
-                                68.dp
-                            ),
-                        shape = CircleShape,
-                        color =
-                            VueoPalette
-                                .SurfaceStrong,
-                    ) {
-                        NetworkImage(
-                            url = person.profile,
-                            contentDescription =
-                                person.name,
-                            modifier =
-                                Modifier.fillMaxSize(),
-                            contentScale =
-                                ContentScale.Crop,
-                            fallbackText =
-                                person.name
-                                    .take(1)
-                                    .uppercase(),
-                        )
-                    }
-
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        Text(
-                            text = person.name,
-                            color = Color.White,
-                            fontSize = 10.sp,
-                            lineHeight = 12.sp,
-                            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        person.character?.takeIf { it.isNotBlank() }?.let { role ->
-                            Text(
-                                text = role,
-                                color = VueoPalette.Muted,
-                                fontSize = 9.sp,
-                                lineHeight = 11.sp,
-                                style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
+                MediaCastCard(person, person.character) { onPersonClick(person) }
+            }
+            if (cast.isNotEmpty() && credits.isNotEmpty()) {
+                item(key = "credits-divider") {
+                    Box(Modifier.padding(horizontal = 4.dp)
+                        .width(1.dp).height(90.dp)
+                        .background(Color.White.copy(alpha = .22f)))
                 }
+            }
+            items(credits, key = { "credit:${it.name.lowercase()}" }) { person ->
+                MediaCastCard(person, person.role)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MediaCastCard(person: MediaPerson, roleLabel: String?, onClick: (() -> Unit)? = null) {
+    Column(
+        modifier =
+            Modifier
+                .width(78.dp)
+                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+        horizontalAlignment =
+            Alignment.CenterHorizontally,
+        verticalArrangement =
+            Arrangement.spacedBy(
+                4.dp
+            ),
+    ) {
+        Surface(
+            modifier =
+                Modifier.size(
+                    68.dp
+                ),
+            shape = CircleShape,
+            color =
+                VueoPalette
+                    .SurfaceStrong,
+        ) {
+            NetworkImage(
+                url = person.profile,
+                contentDescription =
+                    person.name,
+                modifier =
+                    Modifier.fillMaxSize(),
+                contentScale =
+                    ContentScale.Crop,
+                fallbackText =
+                    person.name
+                        .take(1)
+                        .uppercase(),
+            )
+        }
+
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = person.name,
+                color = Color.White,
+                fontSize = 10.sp,
+                lineHeight = 12.sp,
+                style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            roleLabel?.takeIf { it.isNotBlank() }?.let { role ->
+                Text(
+                    text = role,
+                    color = VueoPalette.Muted,
+                    fontSize = 9.sp,
+                    lineHeight = 11.sp,
+                    style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
