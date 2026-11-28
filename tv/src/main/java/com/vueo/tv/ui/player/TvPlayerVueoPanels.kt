@@ -143,11 +143,31 @@ internal fun VueoPlayerSourcesPanel(
     var initialSourceFocus by remember { mutableStateOf(true) }
     var enterListRequest by remember { mutableIntStateOf(0) }
     val providers = options.mapNotNull { it.providerName }.distinct()
+    val tabs = listOf<String?>(null) + providers
     val tabRequesters = remember { mutableMapOf<String?, FocusRequester>() }
     fun tabRequester(provider: String?) = tabRequesters.getOrPut(provider) { FocusRequester() }
     val filteredOptions = options.filter { selectedProvider == null || it.providerName == selectedProvider }
     LaunchedEffect(providers) {
-        if (selectedProvider != null && selectedProvider !in providers) selectedProvider = null
+        if (selectedProvider != null && selectedProvider !in providers) {
+            selectedProvider = null
+            if (active) tabRequester(null).requestTvFocus()
+        }
+    }
+    LaunchedEffect(active, options.any { it.enabled }) {
+        if (active && initialSourceFocus && options.none { it.enabled }) {
+            refreshRequester.requestTvFocus()
+        }
+    }
+
+    fun changeProvider(direction: Int) {
+        val index = tabs.indexOf(selectedProvider) + direction
+        if (index !in tabs.indices) return
+        val provider = tabs[index]
+        if (runCatching { tabRequester(provider).requestFocus() }.getOrDefault(false)) {
+            selectedProvider = provider
+            initialSourceFocus = false
+            enterListRequest++
+        }
     }
     Box(Modifier.fillMaxSize()) {
         Column(
@@ -163,6 +183,14 @@ internal fun VueoPlayerSourcesPanel(
                 horizontalArrangement = Arrangement.SpaceBetween) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Sources", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+                    val status = when {
+                        sourcesStopped -> "Scan stopped"
+                        searching && pluginsStopped -> "Add-ons loading · Plugins stopped"
+                        searching -> "Scanning"
+                        pluginsStopped -> "Scan stopped"
+                        else -> null
+                    }
+                    if (status != null) Text(status, color = Color.White.copy(alpha = .60f), fontSize = 11.sp)
                     if (searching) CircularProgressIndicator(Modifier.size(18.dp), color = TvDesign.Accent, strokeWidth = 2.dp)
                 }
                 VueoPlayerTopAction(
@@ -170,25 +198,26 @@ internal fun VueoPlayerSourcesPanel(
                     label = if (searching) "Stop source scan" else "Refresh sources",
                     requester = refreshRequester,
                     downRequester = tabRequester(selectedProvider),
-                    leftRequester = tabRequester((listOf<String?>(null) + providers).last()),
+                    leftRequester = tabRequester(tabs.last()),
                     rightRequester = FocusRequester.Cancel,
                     onInteraction = onInteraction,
                     onClick = { if (searching) onStop() else onRefresh() },
                 )
             }
-            if (searching || pluginsStopped || sourcesStopped) {
-                Text(if (sourcesStopped) "Source scan stopped" else if (searching && pluginsStopped) "Addons loading • plugins stopped"
-                    else if (searching) "Discovering sources…" else "Plugin scan stopped",
-                    color = Color.White.copy(alpha = .6f), fontSize = 11.sp,
-                    modifier = Modifier.padding(top = 6.dp))
-            }
+            Text(
+                title,
+                color = Color.White.copy(alpha = .82f),
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             Spacer(Modifier.height(12.dp))
             VueoLeadingTabs {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp).horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                (listOf<String?>(null) + providers).forEach { provider ->
+                tabs.forEachIndexed { index, provider ->
                     key(provider) {
                         var focused by remember { mutableStateOf(false) }
                         val selected = provider == selectedProvider
@@ -202,7 +231,8 @@ internal fun VueoPlayerSourcesPanel(
                             modifier = Modifier.focusRequester(tabRequester(provider))
                                 .focusProperties {
                                     up = refreshRequester
-                                    if (provider == providers.lastOrNull()) right = refreshRequester
+                                    left = if (index > 0) tabRequester(tabs[index - 1]) else FocusRequester.Cancel
+                                    right = if (index < tabs.lastIndex) tabRequester(tabs[index + 1]) else refreshRequester
                                 }
                                 .onFocusChanged {
                                     focused = it.isFocused
@@ -216,7 +246,7 @@ internal fun VueoPlayerSourcesPanel(
                                     if (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
                                         if (event.type == KeyEventType.KeyDown) {
                                             onInteraction()
-                                            enterListRequest++
+                                            if (event.nativeKeyEvent.repeatCount == 0) enterListRequest++
                                         }
                                         true
                                     } else false
@@ -244,19 +274,18 @@ internal fun VueoPlayerSourcesPanel(
                     .weight(1f)
                     .padding(horizontal = 8.dp, vertical = 8.dp),
             ) {
-                key(selectedProvider) {
-                    VueoOptionList(
-                        options = filteredOptions,
-                        maxHeightFraction = 1f,
-                        onInteraction = onInteraction,
-                        onSelected = onSelected,
-                        topRequester = tabRequester(selectedProvider),
-                        entryFocusRequester = listEntryRequester,
-                        assignInitialFocus = active && initialSourceFocus,
-                        entryRequest = enterListRequest.takeIf { active },
-                        onFocused = { initialSourceFocus = false },
-                    )
-                }
+                VueoOptionList(
+                    options = filteredOptions,
+                    maxHeightFraction = 1f,
+                    onInteraction = onInteraction,
+                    onSelected = onSelected,
+                    topRequester = tabRequester(selectedProvider),
+                    entryFocusRequester = listEntryRequester,
+                    assignInitialFocus = active && initialSourceFocus,
+                    entryRequest = enterListRequest.takeIf { active },
+                    onHorizontal = { direction -> if (active) changeProvider(direction) },
+                    onFocused = { initialSourceFocus = false },
+                )
             }
         }
     }
@@ -274,11 +303,12 @@ internal fun VueoOptionList(
     onFocused: (TvPlayerOption) -> Unit = {},
     assignInitialFocus: Boolean = true,
     entryRequest: Int? = null,
+    onHorizontal: ((Int) -> Unit)? = null,
 ) {
     val state = rememberLazyListState()
     val requesters = remember { mutableMapOf<String, FocusRequester>() }
     var initialFocusAssigned by remember { mutableStateOf(false) }
-    var handledEntryRequest by remember { mutableIntStateOf(entryRequest ?: 0) }
+    var handledEntryRequest by remember { mutableIntStateOf(0) }
     val initialIndex = remember(options, initialFocusKey) {
         options.indexOfFirst {
             it.key == initialFocusKey && it.enabled
@@ -298,14 +328,14 @@ internal fun VueoOptionList(
         return requesters.getOrPut(option.key) { FocusRequester() }
     }
 
-    LaunchedEffect(options, initialFocusKey, initialFocusAssigned) {
-        if (!assignInitialFocus || initialFocusAssigned || options.isEmpty()) return@LaunchedEffect
+    LaunchedEffect(options, initialFocusKey, assignInitialFocus, initialFocusAssigned) {
+        if (!assignInitialFocus || initialFocusAssigned || firstEnabledIndex < 0) return@LaunchedEffect
         state.scrollToItem(initialIndex)
         if (requesterFor(initialIndex).requestTvFocus()) {
             initialFocusAssigned = true
         }
     }
-    LaunchedEffect(entryRequest, firstEnabledIndex) {
+    LaunchedEffect(entryRequest, options.getOrNull(firstEnabledIndex)?.key) {
         if (entryRequest == null || entryRequest == handledEntryRequest || firstEnabledIndex < 0) return@LaunchedEffect
         state.scrollToItem(firstEnabledIndex)
         if (requesterFor(firstEnabledIndex).requestTvFocus()) handledEntryRequest = entryRequest
@@ -326,6 +356,7 @@ internal fun VueoOptionList(
                 topRequester = topRequester,
                 blockUp = index == firstEnabledIndex,
                 blockDown = index == lastEnabledIndex,
+                onHorizontal = onHorizontal,
                 onInteraction = onInteraction,
                 onFocused = { onFocused(option) },
             ) {
@@ -342,6 +373,7 @@ private fun VueoOptionRow(
     topRequester: FocusRequester,
     blockUp: Boolean,
     blockDown: Boolean,
+    onHorizontal: ((Int) -> Unit)?,
     onInteraction: () -> Unit,
     onFocused: () -> Unit,
     onSelected: () -> Unit,
@@ -366,12 +398,19 @@ private fun VueoOptionRow(
                 }
             }
             .onPreviewKeyEvent { event ->
+                val code = event.nativeKeyEvent.keyCode
+                if (onHorizontal != null && (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)) {
+                    if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount == 0) {
+                        onInteraction()
+                        onHorizontal(if (code == KeyEvent.KEYCODE_DPAD_LEFT) -1 else 1)
+                    }
+                    return@onPreviewKeyEvent true
+                }
                 if (!event.isTvPanelActivationKey()) return@onPreviewKeyEvent false
                 onInteraction()
                 if (event.type == KeyEventType.KeyUp && option.enabled) onSelected()
                 true
             }
-            .focusable(option.enabled)
             .clickable(enabled = option.enabled, onClick = onSelected)
             .background(
                 when {
@@ -403,40 +442,26 @@ private fun VueoOptionRow(
                 )
         )
         Spacer(Modifier.width(11.dp))
-        if (option.providerName != null) {
-            Column(Modifier.weight(1f)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
+        if (option.providerName != null || onHorizontal != null) {
+            val foreground = if (option.selected) TvDesign.OnAccent else Color.White
+            val statusColor = if (option.playbackFailed && !option.selected) Color(0xFFFF7777) else foreground
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        option.title,
-                        color = if (option.selected) TvDesign.OnAccent else if (option.enabled) Color.White else Color.White.copy(alpha = .30f),
-                        fontSize = 12.sp,
-                        fontWeight = if (focused || option.selected) FontWeight.SemiBold else FontWeight.Medium,
-                        modifier = Modifier.weight(1f),
+                        option.title, color = foreground, fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f),
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        option.meta.orEmpty(), color = if (option.selected) TvDesign.OnAccent.copy(alpha = .72f) else Color.White.copy(alpha = .72f), fontSize = 9.sp,
-                        modifier = Modifier.weight(1f), maxLines = 5, overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         if (option.playbackFailed) "Failed" else if (option.selected) "Playing" else "Direct",
-                        color = if (option.playbackFailed) Color(0xFFFF7777) else if (option.selected) TvDesign.OnAccent else Color.White.copy(alpha = .62f),
-                        fontSize = 9.sp, fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.background(
-                            if (option.playbackFailed) Color(0xFFFF7777).copy(alpha = .12f) else if (option.selected) TvDesign.Accent.copy(alpha = .10f) else Color.White.copy(alpha = .06f),
-                            RoundedCornerShape(50),
-                        ).padding(horizontal = 6.dp, vertical = 3.dp),
+                        color = statusColor, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.background(statusColor.copy(alpha = .12f), RoundedCornerShape(50))
+                            .padding(horizontal = 6.dp, vertical = 3.dp),
                     )
+                }
+                option.meta?.takeIf(String::isNotBlank)?.let {
+                    Text(it, color = foreground.copy(alpha = .76f), fontSize = 11.sp,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         } else {

@@ -2136,8 +2136,14 @@ fun TvPlayerScreen(
             TvPlayerPanel.SOURCES -> playableSources.map { item ->
                 TvPlayerOption(
                     key = SourceSelector.identityKey(item.toSourceCandidateForPlayer()),
-                    title = PlayerSourceDisplay.groupTitle(item),
-                    meta = PlayerSourceDisplay.groupedDetails(item),
+                    title = listOf(PlayerSourceDisplay.providerTitle(item), PlayerSourceDisplay.groupTitle(item))
+                        .distinctBy(String::lowercase).joinToString(" · "),
+                    meta = (PlayerSourceDisplay.compactDetails(item).split(" · ") +
+                        listOfNotNull(item.serverName?.trim()?.takeIf {
+                            it.isNotEmpty() && !it.contains("://") && !it.contains('\n') &&
+                                !it.equals(PlayerSourceDisplay.providerTitle(item), ignoreCase = true)
+                        }))
+                        .filter(String::isNotBlank).distinctBy(String::lowercase).joinToString(" · "),
                     providerName = item.providerName,
 
                     selected = SourceSelector.identityKey(item.toSourceCandidateForPlayer()) ==

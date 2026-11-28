@@ -59,7 +59,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -138,6 +137,21 @@ internal fun VueoDetailHero(
 
         Spacer(Modifier.height(10.dp))
 
+        if (item.genres.isNotEmpty()) {
+            VueoMetaTextRow(item.genres.take(4), fontSize = 13)
+            Spacer(Modifier.height(6.dp))
+        }
+
+        if (state.ratings.isNotEmpty() || state.dnaMatch != null) {
+            VueoRatingsRow(state.ratings, state.dnaMatch)
+            Spacer(Modifier.height(12.dp))
+        } else {
+            item.imdbRating?.takeIf { it.isFinite() && it > 0.0 }?.let {
+                VueoMetaTextRow(listOf("IMDb ${String.format("%.1f", it)}"), fontSize = 13)
+                Spacer(Modifier.height(10.dp))
+            }
+        }
+
         val certification = ContentWarningRepository.tvCertification(item)
         val imdbId = ContentWarningRepository.titleImdbId(item)
         val contentWarnings by produceState(emptyList<String>(), imdbId) {
@@ -187,16 +201,6 @@ internal fun VueoDetailHero(
 
         Spacer(Modifier.height(8.dp))
 
-        if (state.ratings.isNotEmpty() || state.dnaMatch != null) {
-            VueoRatingsRow(state.ratings, state.dnaMatch)
-            Spacer(Modifier.height(12.dp))
-        } else {
-            item.imdbRating?.takeIf { it.isFinite() && it > 0.0 }?.let {
-                VueoMetaTextRow(listOf("IMDb ${String.format("%.1f", it)}"), fontSize = 13)
-                Spacer(Modifier.height(10.dp))
-            }
-        }
-
         item.description?.trim()?.takeIf(String::isNotBlank)?.let { synopsis ->
             Text(
                 text = synopsis,
@@ -211,11 +215,6 @@ internal fun VueoDetailHero(
             Spacer(Modifier.height(11.dp))
         }
 
-        if (item.genres.isNotEmpty()) {
-            VueoMetaTextRow(item.genres.take(4), fontSize = 13)
-            Spacer(Modifier.height(6.dp))
-        }
-
         val status = state.vueoExtras.status?.trim()?.takeIf(String::isNotBlank)
         val releaseMeta = listOfNotNull(releaseDate) + secondaryMeta
         if (status != null || releaseMeta.isNotEmpty()) {
@@ -224,6 +223,7 @@ internal fun VueoDetailHero(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                status?.let { VueoMetaBadge(it) }
                 if (releaseMeta.isNotEmpty()) {
                     Text(
                         text = releaseMeta.joinToString(" · "),
@@ -234,7 +234,6 @@ internal fun VueoDetailHero(
                         modifier = Modifier.weight(1f, fill = false),
                     )
                 }
-                status?.let { VueoMetaBadge(it) }
             }
         }
 
@@ -773,33 +772,17 @@ private fun VueoMetaBadge(text: String) {
     }
 }
 
-private val DetailWarningLineBrush = Brush.verticalGradient(
-    0f to Color(0xFFFFEB00),
-    .30f to Color(0xFFA8F000),
-    1f to Color(0xFF92E900),
-)
-
 @Composable
 private fun VueoDetailContentWarning(certification: String?, warnings: List<String>) {
-    Row(
+    Text(
+        text = (listOfNotNull(certification) + warnings).joinToString(" · "),
+        color = Color.White,
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
         modifier = Modifier.fillMaxWidth(VueoHeroContentWidth),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.width(3.dp).height(24.dp).background(DetailWarningLineBrush, RoundedCornerShape(2.dp)))
-        certification?.let { VueoMetaBadge(it) }
-        if (warnings.isNotEmpty()) {
-            Text(
-                text = warnings.joinToString(" · "),
-                color = Color.White,
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-        }
-    }
+    )
 }
 
 @Composable

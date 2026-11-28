@@ -55,15 +55,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
@@ -321,7 +322,7 @@ internal fun VueoPlayerPresentation(
                     enter = tvPlayerSidePanelEnter(),
                     exit = tvPlayerSidePanelExit(),
                 ),
-                title = episode?.let { "S${it.season}E${it.episode} • ${it.title}" } ?: media.name,
+                title = media.name + episode?.let { " · S${it.season}E${it.episode}" }.orEmpty(),
                 options = displayedSourceOptions,
                 active = sourcesOpen,
                 searching = sourcesSearching,
@@ -372,9 +373,9 @@ internal fun VueoPlayerPresentation(
 }
 
 private val ContentWarningLineBrush = Brush.verticalGradient(
-    0f to Color(0xFFFFEB00),
-    .30f to Color(0xFFA8F000),
-    1f to Color(0xFF92E900),
+    0f to Color(0xFFFFEB00).copy(alpha = .88f),
+    .30f to Color(0xFFA8F000).copy(alpha = .88f),
+    1f to Color(0xFF92E900).copy(alpha = .88f),
 )
 
 @Composable
@@ -428,37 +429,19 @@ private fun VueoContentWarningsOverlay(
 
     Row(
         modifier = Modifier
-            .drawWithCache {
-                val startPadding = 8.dp.toPx()
-                val verticalPadding = 6.dp.toPx()
-                val fadeWidth = 48.dp.toPx()
-                val scrim = Brush.horizontalGradient(
-                    colors = listOf(Color.Black.copy(alpha = .78f), Color.Transparent),
-                    startX = size.width,
-                    endX = size.width + fadeWidth,
-                )
-                onDrawBehind {
-                    drawRoundRect(
-                        brush = scrim,
-                        topLeft = Offset(-startPadding, -verticalPadding),
-                        size = Size(
-                            width = size.width + startPadding + fadeWidth,
-                            height = size.height + verticalPadding * 2,
-                        ),
-                        cornerRadius = CornerRadius(6.dp.toPx()),
-                        alpha = containerAlpha.value,
-                    )
-                }
-            }
             .alpha(containerAlpha.value),
         verticalAlignment = Alignment.Top,
     ) {
         Box(
             modifier = Modifier
-                .width(3.dp)
+                .width(4.dp)
                 .height((totalLineHeight * lineHeightFraction.value).dp)
                 .clip(RoundedCornerShape(50))
-                .background(ContentWarningLineBrush),
+                .background(ContentWarningLineBrush)
+                .background(Brush.horizontalGradient(
+                    listOf(Color.White.copy(alpha = .55f), Color.Transparent, Color.Black.copy(alpha = .22f))
+                ))
+                .border(.5.dp, Color.White.copy(alpha = .55f), RoundedCornerShape(50)),
         )
         Column(
             modifier = Modifier.padding(start = 9.dp),
@@ -469,19 +452,8 @@ private fun VueoContentWarningsOverlay(
                     modifier = Modifier.alpha(itemAlphas.getOrNull(index)?.value ?: 0f),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = warning.label,
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        lineHeight = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = " • ${warning.severity}",
-                        color = Color.White,
-                        fontSize = 11.sp,
-                        lineHeight = 15.sp,
-                    )
+                    OutlinedWarningText(warning.label, 12.sp, FontWeight.SemiBold)
+                    OutlinedWarningText(" • ${warning.severity}", 11.sp)
                 }
             }
         }
@@ -502,18 +474,40 @@ private fun VueoAgeRatingFallback(
         onComplete()
     }
 
-    Text(
-        text = certification,
-        color = Color.White,
-        fontSize = 13.sp,
-        fontWeight = FontWeight.SemiBold,
-        modifier = Modifier
-            .alpha(opacity.value)
-            .background(Color.Black.copy(alpha = .72f), RoundedCornerShape(8.dp))
-            .border(1.dp, Color.White.copy(alpha = .65f), RoundedCornerShape(8.dp))
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-    )
+    Box(Modifier.alpha(opacity.value)) {
+        OutlinedWarningText(certification, 13.sp, FontWeight.SemiBold)
+    }
 }
+
+@Composable
+private fun OutlinedWarningText(
+    text: String,
+    fontSize: TextUnit,
+    weight: FontWeight = FontWeight.Normal,
+) {
+    val density = LocalDensity.current
+    val outline = with(density) { 1.5.dp.toPx() }
+    val shadowOffset = with(density) { 1.dp.toPx() }
+    val style = LocalTextStyle.current.copy(
+        fontSize = fontSize,
+        fontWeight = weight,
+        lineHeight = 15.sp,
+    )
+    Box {
+        Text(
+            text = text,
+            color = Color.Black,
+            style = style.copy(drawStyle = Stroke(outline)),
+            modifier = Modifier.clearAndSetSemantics {},
+        )
+        Text(
+            text = text,
+            color = Color.White,
+            style = style.copy(shadow = Shadow(Color.Black, Offset(0f, shadowOffset), shadowOffset * 2f)),
+        )
+    }
+}
+
 
 @Composable
 private fun VueoPlayerCinematicScrim(strong: Boolean) {
