@@ -55,6 +55,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -367,6 +371,12 @@ internal fun VueoPlayerPresentation(
     }
 }
 
+private val ContentWarningLineBrush = Brush.verticalGradient(
+    0f to Color(0xFFFFEB00),
+    .30f to Color(0xFFA8F000),
+    1f to Color(0xFF92E900),
+)
+
 @Composable
 private fun VueoContentWarningsOverlay(
     warnings: List<ContentWarning>,
@@ -417,7 +427,30 @@ private fun VueoContentWarningsOverlay(
     if (containerAlpha.value <= 0f) return
 
     Row(
-        modifier = Modifier.alpha(containerAlpha.value),
+        modifier = Modifier
+            .drawWithCache {
+                val startPadding = 8.dp.toPx()
+                val verticalPadding = 6.dp.toPx()
+                val fadeWidth = 48.dp.toPx()
+                val scrim = Brush.horizontalGradient(
+                    colors = listOf(Color.Black.copy(alpha = .78f), Color.Transparent),
+                    startX = size.width,
+                    endX = size.width + fadeWidth,
+                )
+                onDrawBehind {
+                    drawRoundRect(
+                        brush = scrim,
+                        topLeft = Offset(-startPadding, -verticalPadding),
+                        size = Size(
+                            width = size.width + startPadding + fadeWidth,
+                            height = size.height + verticalPadding * 2,
+                        ),
+                        cornerRadius = CornerRadius(6.dp.toPx()),
+                        alpha = containerAlpha.value,
+                    )
+                }
+            }
+            .alpha(containerAlpha.value),
         verticalAlignment = Alignment.Top,
     ) {
         Box(
@@ -425,7 +458,7 @@ private fun VueoContentWarningsOverlay(
                 .width(3.dp)
                 .height((totalLineHeight * lineHeightFraction.value).dp)
                 .clip(RoundedCornerShape(50))
-                .background(TvDesign.Accent),
+                .background(ContentWarningLineBrush),
         )
         Column(
             modifier = Modifier.padding(start = 9.dp),
@@ -438,14 +471,14 @@ private fun VueoContentWarningsOverlay(
                 ) {
                     Text(
                         text = warning.label,
-                        color = Color.White.copy(alpha = .92f),
+                        color = Color.White,
                         fontSize = 12.sp,
                         lineHeight = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
                         text = " • ${warning.severity}",
-                        color = Color.White.copy(alpha = .56f),
+                        color = Color.White,
                         fontSize = 11.sp,
                         lineHeight = 15.sp,
                     )
