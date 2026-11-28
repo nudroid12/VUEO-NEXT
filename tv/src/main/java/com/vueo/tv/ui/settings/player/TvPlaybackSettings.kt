@@ -1,5 +1,6 @@
 package com.vueo.tv.settings
 
+import com.vueo.tv.home.TvHomeFocusPreferences
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -235,6 +236,9 @@ internal fun TvAppearanceSettings(
     var sidebarStyle by remember { mutableStateOf(TvSidebarPreferences.style(context)) }
     var hideSidebar by remember { mutableStateOf(TvSidebarPreferences.hideSidebar(context)) }
 
+    val fixedFocus = TvHomeFocusPreferences.isFixed(context)
+    val changeFocusStyle = { TvHomeFocusPreferences.setFixed(context, !fixedFocus) }
+
     val entries = listOfNotNull(
         choiceEntry("theme", "Theme", "Choose the dark cinematic base palette.", theme.label, {
             val next = cycle(AppTheme.entries, TvDesign.Theme, -1); store.setAppTheme(next); TvDesign.applyTheme(next)
@@ -264,6 +268,14 @@ internal fun TvAppearanceSettings(
                 TvSidebarPreferences.setHideSidebar(context, it)
             }.copy(section = "NAVIGATION")
         } else null,
+        choiceEntry(
+            "home-focus-style",
+            "Row focus style",
+            "Choose how the focus outline moves in Home and Catalog Only.",
+            if (fixedFocus) "Fixed focus" else "Follow card",
+            changeFocusStyle,
+            changeFocusStyle,
+        ).copy(section = "HOME & CATALOG"),
     )
     TvSettingsListScreen("Appearance", "Choose a dark VUEO palette and tune the interactive accent.", entries, onNavigate, onProfile, onBack)
 }

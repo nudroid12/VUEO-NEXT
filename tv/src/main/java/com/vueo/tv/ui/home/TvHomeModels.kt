@@ -1,5 +1,7 @@
 package com.vueo.tv.home
 
+import android.content.Context
+import androidx.compose.runtime.mutableStateOf
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import androidx.compose.ui.unit.dp
@@ -169,3 +171,19 @@ internal fun TvHomeRow.savedFocusIndex(fallback: Int = 0): Int {
 
 internal fun catalogCardKey(rowKey: String, media: MediaItem): String =
     "$rowKey:${media.type}:${media.id}"
+
+
+internal object TvHomeFocusPreferences {
+    private const val FixedFocusKey = "fixed_row_focus"
+    private val fixedFocus = mutableStateOf<Boolean?>(null)
+
+    fun isFixed(context: Context): Boolean = fixedFocus.value
+        ?: context.getSharedPreferences("tv_home_appearance", Context.MODE_PRIVATE)
+            .getBoolean(FixedFocusKey, false)
+
+    fun setFixed(context: Context, enabled: Boolean) {
+        context.getSharedPreferences("tv_home_appearance", Context.MODE_PRIVATE)
+            .edit().putBoolean(FixedFocusKey, enabled).apply()
+        fixedFocus.value = enabled
+    }
+}

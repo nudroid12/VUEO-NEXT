@@ -52,6 +52,11 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -120,6 +125,7 @@ internal data class HomeRowsLayout(
     val bottomPadding: Dp,
     val startPadding: Dp,
     val portraitCards: Boolean,
+    val fixedFocus: Boolean,
 )
 
 private data class HomeVerticalFocusTarget(
@@ -719,6 +725,7 @@ private fun TvModernHomeRow(
 
     val density = LocalDensity.current
     val rowHorizontalPadding = rowsLayout.startPadding
+    val cardHeight = if (rowsLayout.portraitCards) MODERN_HOME_POSTER_HEIGHT else row.kind.cardHeight
 
     val isContinueWatching = row.kind == TvHomeRowKind.CONTINUE_WATCHING
     val horizontalBringIntoViewSpec = remember {
@@ -951,7 +958,36 @@ private fun TvModernHomeRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(start = rowHorizontalPadding)
-                    .clipToBounds(),
+                    .clipToBounds()
+                    .drawWithContent {
+                        drawContent()
+                        if (!rowsLayout.fixedFocus || !rowHasFocus) return@drawWithContent
+                        val layout = rowState.layoutInfo
+                        val focusedItem = layout.visibleItemsInfo.firstOrNull { it.key == focusedCardKey }
+                            ?: return@drawWithContent
+                        val anchor = 0f
+                        // At the end of the row, use the focused card's projected
+                        // position after the remaining scroll distance is consumed.
+                        val last = layout.visibleItemsInfo.lastOrNull()
+                        val left = when {
+                            suppressRouteBringIntoView -> focusedItem.offset.toFloat()
+                            last?.index == layout.totalItemsCount - 1 -> {
+                                val remaining = (
+                                    last.offset + last.size - layout.viewportEndOffset + layout.afterContentPadding
+                                ).coerceAtLeast(0)
+                                maxOf(anchor, focusedItem.offset.toFloat() - remaining)
+                            }
+                            else -> anchor
+                        }
+                        val border = 2.dp.toPx()
+                        drawRoundRect(
+                            color = Color.White,
+                            topLeft = Offset(left + border / 2f, anchor + border / 2f),
+                            size = Size(focusedItem.size - border, cardHeight.toPx() - border),
+                            cornerRadius = CornerRadius(11.dp.toPx()),
+                            style = Stroke(border),
+                        )
+                    },
             ) {
                 LazyRow(
                     state = rowState,
@@ -1011,6 +1047,7 @@ private fun TvModernHomeRow(
                             kind = row.kind,
                             requester = itemRequester,
                             contentFocusEnabled = contentFocusEnabled,
+                            fixedFocus = rowsLayout.fixedFocus,
                             onLeftAtStart = onLeftAtRowStart.takeIf { index == 0 },
                             onFocusAcquired = { focusedCardKey = entry.key },
                             onFocused = {
@@ -1052,6 +1089,7 @@ private fun TvModernHomeCard(
     kind: TvHomeRowKind,
     requester: FocusRequester,
     contentFocusEnabled: Boolean,
+    fixedFocus: Boolean,
     onLeftAtStart: (() -> Unit)?,
     onFocusAcquired: () -> Unit,
     onFocused: () -> Unit,
@@ -1103,7 +1141,7 @@ private fun TvModernHomeCard(
             .clip(shape)
             .background(TvDesign.Surface)
             .border(
-                width = if (focused) 2.dp else 0.dp,
+                width = if (focused && !fixedFocus) 2.dp else 0.dp,
                 color = if (focused) TvDesign.Accent.copy(alpha = .96f) else Color.Transparent,
                 shape = shape,
             )

@@ -93,6 +93,7 @@ fun TvUpdatePrompt(
     var failed by remember(release.versionCode) { mutableStateOf(false) }
 
     val canDownload = release.downloadUrl != null
+    var updateReceivedFocus by remember(release.versionCode, canDownload) { mutableStateOf(false) }
     val horizontalInset = 36.dp
     val notes = remember(release.changelog) { visibleUpdateNotes(release.changelog) }
 
@@ -206,6 +207,7 @@ fun TvUpdatePrompt(
                     TvUpdateAction(
                         label = "Later",
                         requester = laterRequester,
+                        canTakeFocus = !canDownload || updateReceivedFocus,
                         enabled = !downloading,
                         onClick = onLater,
                         onBack = onLater,
@@ -262,6 +264,7 @@ fun TvUpdatePrompt(
                         up = updateRequester,
                         down = updateRequester,
                         primary = true,
+                        onFocused = { updateReceivedFocus = true },
                     )
                 }
             }
@@ -282,6 +285,8 @@ private fun TvUpdateAction(
     down: FocusRequester,
     primary: Boolean,
     interactive: Boolean = enabled,
+    canTakeFocus: Boolean = enabled,
+    onFocused: () -> Unit = {},
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
@@ -315,7 +320,10 @@ private fun TvUpdateAction(
                 this.up = up
                 this.down = down
             }
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (focused) onFocused()
+            }
             .onPreviewKeyEvent { event ->
                 val keyCode = event.nativeKeyEvent.keyCode
                 when {
@@ -338,7 +346,7 @@ private fun TvUpdateAction(
             .clip(ActionShape)
             .background(background)
             .border(1.dp, border, ActionShape)
-            .focusable(enabled)
+            .focusable(enabled && canTakeFocus)
             .padding(horizontal = 16.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center,
     ) {

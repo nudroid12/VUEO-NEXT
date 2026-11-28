@@ -302,6 +302,7 @@ internal fun TvHomePresentation(
                         bottomPadding = if (catalogOnly) 24.dp else rowsViewportHeight,
                         startPadding = if (catalogOnly) 28.dp else contentStartPadding,
                         portraitCards = catalogOnly,
+                        fixedFocus = TvHomeFocusPreferences.isFixed(context),
                     ),
                     contentFocusRequester = contentFocusRequester,
                     focusResetToken = focusResetToken,
