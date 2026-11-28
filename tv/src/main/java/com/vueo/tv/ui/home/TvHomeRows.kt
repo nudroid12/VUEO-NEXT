@@ -5,10 +5,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.LocalPinnableContainer
 import com.vueo.tv.ui.tvPrefetchImage
 import androidx.compose.ui.unit.Density
-import com.vueo.tv.ui.motion.*
 import androidx.compose.animation.core.AnimationSpec
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -61,7 +58,6 @@ import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -80,7 +76,6 @@ import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
 import com.vueo.tv.ui.tvPosterActivation
 import com.vueo.tv.ui.tvSidebarIsPillMode
-import com.vueo.tv.ui.motion.TvMotion
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -109,16 +104,12 @@ private val TvHomeRowKind.cardHeight: Dp
     get() = if (this == TvHomeRowKind.POSTERS) MODERN_HOME_POSTER_HEIGHT else ContinueWatchingHeight
 
 
-private fun TvHomeRowKind.focusPaintInset(): Dp =
-    if (this == TvHomeRowKind.CONTINUE_WATCHING) 4.dp else 0.dp
-
 /** Height of a complete row including its title, gap and focus paint space. */
 internal fun TvHomeRowKind.homeRowContentHeight(
     density: Density,
     portraitCards: Boolean = false,
 ): Dp =
-    (if (portraitCards) MODERN_HOME_POSTER_HEIGHT else cardHeight) + RowTitleSpacing + with(density) { RowTitleLineHeight.toDp() } +
-        focusPaintInset() * 2f
+    (if (portraitCards) MODERN_HOME_POSTER_HEIGHT else cardHeight) + RowTitleSpacing + with(density) { RowTitleLineHeight.toDp() }
 
 internal data class HomeRowsLayout(
     val viewportHeight: Dp,
@@ -726,16 +717,13 @@ private fun TvModernHomeRow(
 
     val density = LocalDensity.current
     val rowHorizontalPadding = rowsLayout.startPadding
-    // Reserve paint space for the 1.022x focus scale without moving the cards.
-    val focusPaintInset = row.kind.focusPaintInset()
 
-    // Port of NuvioTV 0.8.3-beta ModernHomeRows focus alignment policy.
-    // Left/Right keeps the focused poster at the row start; Up/Down must
-    // restore the row position before asking Compose to focus that poster.
-    // This row already has external left padding, so the local anchor is 0
-    // (or focusPaintInset for scaled Continue Watching cards).
-    val horizontalBringIntoViewSpec = remember(density, defaultBringIntoViewSpec, focusPaintInset) {
-        val anchorPx = with(density) { focusPaintInset.toPx() }
+    // Continue Watching uses Nuvio's full-width rail: the focus anchor is
+    // the LazyRow's leading content padding, in both Home presentations.
+    val isContinueWatching = row.kind == TvHomeRowKind.CONTINUE_WATCHING
+    val rowContentStart = if (isContinueWatching) rowHorizontalPadding else 0.dp
+    val horizontalBringIntoViewSpec = remember(density, defaultBringIntoViewSpec, rowContentStart) {
+        val anchorPx = with(density) { rowContentStart.roundToPx().toFloat() }
         @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
         object : BringIntoViewSpec {
             override val scrollAnimationSpec: AnimationSpec<Float> =
@@ -980,8 +968,11 @@ private fun TvModernHomeRow(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = rowHorizontalPadding - focusPaintInset)
-                    .clipToBounds(),
+                    .then(
+                        if (isContinueWatching) Modifier else Modifier
+                            .padding(start = rowHorizontalPadding)
+                            .clipToBounds()
+                    ),
             ) {
                 LazyRow(
                     state = rowState,
@@ -1007,10 +998,8 @@ private fun TvModernHomeRow(
                         .onFocusChanged { rowHasFocus = it.hasFocus }
                         .focusGroup(),
                     contentPadding = PaddingValues(
-                        start = focusPaintInset,
-                        top = focusPaintInset,
-                        end = 32.dp.coerceAtLeast(focusPaintInset),
-                        bottom = focusPaintInset,
+                        start = rowContentStart,
+                        end = if (isContinueWatching) rowHorizontalPadding else 32.dp,
                     ),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
@@ -1045,8 +1034,8 @@ private fun TvModernHomeRow(
                             requester = itemRequester,
                             contentFocusEnabled = contentFocusEnabled,
                             onLeftAtStart = onLeftAtRowStart.takeIf { index == 0 },
+                            onFocusAcquired = { focusedCardKey = entry.key },
                             onFocused = {
-                                focusedCardKey = entry.key
                                 val returningToThisCard = verticalFocusTarget?.let {
                                     it.routeReturn && (if(it.cardKey != null) it.cardKey == entry.key else it.cardIndex == index)
                                 } == true
@@ -1086,35 +1075,32 @@ private fun TvModernHomeCard(
     requester: FocusRequester,
     contentFocusEnabled: Boolean,
     onLeftAtStart: (() -> Unit)?,
+    onFocusAcquired: () -> Unit,
     onFocused: () -> Unit,
     onOpen: () -> Unit,
     onHold: () -> Unit,
 ) {
     var focused by remember(entry.key) { mutableStateOf(false) }
-    // Nuvio's catalog cards keep their geometry on focus. Preserve the
-    // existing Continue Watching treatment outside the poster comparison.
-    val animatedScale by animateFloatAsState(
-        targetValue = if (focused) tvTunedFocusScale(if (kind == TvHomeRowKind.CONTINUE_WATCHING) 1.022f else 1f) else 1f,
-        animationSpec = tvTunedSpec(TvMotionGroup.FOCUS, focused, tween(
-            durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
-            easing = TvMotion.EaseOut,
-        )),
-        label = "modernHomeCardScale",
-    )
+    val isContinueWatching = kind == TvHomeRowKind.CONTINUE_WATCHING
 
     val width = if (portraitCards) PosterWidth else kind.cardWidth
     val height = if (portraitCards) MODERN_HOME_POSTER_HEIGHT else kind.cardHeight
     val shape = if (!portraitCards && (kind == TvHomeRowKind.CONTINUE_WATCHING || kind == TvHomeRowKind.COLLECTIONS)) ContinueShape else PosterShape
+
+    // Like Nuvio's Continue Watching item, publish the focus change through
+    // a composition effect once the native focus target has accepted it.
+    val latestOnFocused by rememberUpdatedState(onFocused)
+    if (isContinueWatching) {
+        LaunchedEffect(focused) {
+            if (focused) latestOnFocused()
+        }
+    }
 
     Box(
         modifier = Modifier
             .width(width)
             .height(height)
             .zIndex(if (focused) 1f else 0f)
-            .graphicsLayer {
-                scaleX = animatedScale
-                scaleY = animatedScale
-            }
             .focusRequester(requester)
             .focusProperties { canFocus = contentFocusEnabled }
             .onPreviewKeyEvent { event ->
@@ -1130,7 +1116,10 @@ private fun TvModernHomeCard(
             }
             .onFocusChanged { state ->
                 val becameFocused = state.isFocused
-                if (becameFocused && !focused) onFocused()
+                if (becameFocused && !focused) {
+                    onFocusAcquired()
+                    if (!isContinueWatching) onFocused()
+                }
                 focused = becameFocused
             }
             .clip(shape)
